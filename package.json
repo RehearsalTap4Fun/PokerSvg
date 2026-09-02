@@ -1,0 +1,26 @@
+{
+  "name": "poker-sng",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit -p tsconfig.json && vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "release": "npm run build && mkdir -p release && cp dist/index.html \"release/德州扑克SNG.html\" && echo \"单机版: release/德州扑克SNG.html\""
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.3",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^4.3.1",
+    "typescript": "^5.5.4",
+    "vite": "^5.4.6",
+    "vite-plugin-singlefile": "^2.3.3",
+    "vitest": "^2.1.1"
+  }
+}
