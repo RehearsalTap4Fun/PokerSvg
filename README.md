@@ -12,7 +12,7 @@ npm run dev      # 开发（http://localhost:5173）
 npm test         # vitest 全量测试（引擎规则/评牌器/equity 基准/AI 策略/对手建模/ICM/fuzz 不变量）
 npm run build    # tsc 类型检查 + vite 单文件构建
 npm run release  # 构建并输出 release/德州扑克SNG.html（file:// 双击可玩）
-npx vite-node scripts/calibrate.ts [style] [games]   # 测某风格 AI 的实测行为统计（调参 / 重校 ai/adapt.ts 的 REF）
+npm run calibrate -- [style] [games]   # 测某风格 AI 的实测行为统计（调参 / 重校 ai/adapt.ts 的 REF）
 ```
 
 ## 玩法

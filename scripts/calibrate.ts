@@ -4,7 +4,7 @@ import { emptyCounters, ratesOf, type StatCounters } from '../src/analysis/playe
 import type { AiStyleId } from '../src/core/types'
 
 // 校准脚本：全同风格桌自打若干场，输出该风格的实测行为统计（用于 ai/adapt.ts 的 REF 与风格调参）。
-// 用法：npx vite-node scripts/calibrate.ts [styleId=tag] [games=6]
+// 用法：npm run calibrate -- [styleId=tag] [games=6]   （等价 npx tsx scripts/calibrate.ts …）
 
 const styleId = (process.argv[2] ?? 'tag') as AiStyleId
 const games = Number(process.argv[3] ?? 6)
