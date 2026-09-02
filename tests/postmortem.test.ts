@@ -74,12 +74,12 @@ describe('赛后复盘分析', () => {
     const pm = analyzeTournament(gc.history, gc.ts.players, 0)
     const handNos = new Set(gc.history.map((h) => h.handNo))
     for (const f of pm.findings) {
-      expect(['bad', 'warn', 'good']).toContain(f.severity)
+      expect(['bad', 'warn', 'info', 'good']).toContain(f.severity)
       expect(f.text.length).toBeGreaterThan(6)
       if (f.handNo !== undefined) expect(handNos.has(f.handNo)).toBe(true)
     }
-    // 排序：bad 在 warn 前，warn 在 good 前
-    const order = pm.findings.map((f) => ({ bad: 0, warn: 1, good: 2 })[f.severity])
+    // 排序：bad → warn → info → good
+    const order = pm.findings.map((f) => ({ bad: 0, warn: 1, info: 2, good: 3 })[f.severity])
     expect([...order].sort((a, b) => a - b)).toEqual(order)
   }, 60_000)
 

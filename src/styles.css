@@ -1621,6 +1621,10 @@ kbd {
   background: #d97706;
 }
 
+.pm-info .pm-dot {
+  background: #64748b;
+}
+
 .pm-good .pm-dot {
   background: var(--green);
 }
