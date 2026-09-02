@@ -82,8 +82,7 @@ function policyPreflop(style: AiStyle, sit: PublicSituation, classId: number): A
       const openTh = OPEN_PCT[sit.position] * raiseLoose
       const raiseP = ramp(pct, openTh)
       // 跟注站/疯鱼有 limp 倾向（limp 范围按 looseness 展开）
-      const limpTendency = style.id === 'station' ? 0.6 : style.id === 'maniac' ? 0.15 : 0.03
-      const limpP = (1 - raiseP) * ramp(pct, OPEN_PCT[sit.position] * loose * 2.2) * limpTendency
+      const limpP = (1 - raiseP) * ramp(pct, OPEN_PCT[sit.position] * loose * 2.2) * style.limpTendency
       return normalizeDist({ fold: 1 - raiseP - limpP, check: 0, call: limpP, raise: raiseP })
     }
     case 'vsLimp': {

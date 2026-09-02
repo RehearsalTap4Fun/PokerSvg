@@ -24,6 +24,10 @@ export interface AiStyle {
   openSize: number
   /** 3bet 频率系数 */
   threeBet: number
+  /** 无人加注时 limp（平跟）的倾向 0..1 */
+  limpTendency: number
+  /** 翻后下注尺度系数（1 = 标准；小球 <1，超凶 >1）。尺度只与局面有关，不随牌力变化 */
+  betSizing: number
 }
 
 export const STYLES: Record<AiStyleId, AiStyle> = {
@@ -40,6 +44,8 @@ export const STYLES: Record<AiStyleId, AiStyle> = {
     callDown: 0.35,
     openSize: 2.5,
     threeBet: 1.0,
+    limpTendency: 0.03,
+    betSizing: 1.0,
   },
   lag: {
     id: 'lag',
@@ -54,6 +60,8 @@ export const STYLES: Record<AiStyleId, AiStyle> = {
     callDown: 0.4,
     openSize: 2.8,
     threeBet: 1.6,
+    limpTendency: 0.05,
+    betSizing: 1.05,
   },
   rock: {
     id: 'rock',
@@ -68,6 +76,8 @@ export const STYLES: Record<AiStyleId, AiStyle> = {
     callDown: 0.2,
     openSize: 2.2,
     threeBet: 0.6,
+    limpTendency: 0.05,
+    betSizing: 0.95,
   },
   station: {
     id: 'station',
@@ -82,6 +92,8 @@ export const STYLES: Record<AiStyleId, AiStyle> = {
     callDown: 0.85,
     openSize: 2.2,
     threeBet: 0.4,
+    limpTendency: 0.6,
+    betSizing: 0.85,
   },
   maniac: {
     id: 'maniac',
@@ -96,6 +108,8 @@ export const STYLES: Record<AiStyleId, AiStyle> = {
     callDown: 0.55,
     openSize: 3.0,
     threeBet: 2.2,
+    limpTendency: 0.15,
+    betSizing: 1.25,
   },
 
   // —— 传奇选手：以公开打法印象参数化的"致敬版"AI，各自独立倾向 ——
@@ -112,6 +126,8 @@ export const STYLES: Record<AiStyleId, AiStyle> = {
     callDown: 0.45,
     openSize: 2.5,
     threeBet: 1.5,
+    limpTendency: 0.03,
+    betSizing: 1.0,
   },
   dwan: {
     id: 'dwan',
@@ -126,6 +142,8 @@ export const STYLES: Record<AiStyleId, AiStyle> = {
     callDown: 0.5,
     openSize: 2.8,
     threeBet: 2.0,
+    limpTendency: 0.04,
+    betSizing: 1.2,
   },
   hellmuth: {
     id: 'hellmuth',
@@ -140,6 +158,8 @@ export const STYLES: Record<AiStyleId, AiStyle> = {
     callDown: 0.3,
     openSize: 2.2,
     threeBet: 0.7,
+    limpTendency: 0.06,
+    betSizing: 0.9,
   },
   negreanu: {
     id: 'negreanu',
@@ -154,6 +174,8 @@ export const STYLES: Record<AiStyleId, AiStyle> = {
     callDown: 0.65,
     openSize: 2.2,
     threeBet: 0.9,
+    limpTendency: 0.18,
+    betSizing: 0.7,
   },
   brunson: {
     id: 'brunson',
@@ -168,6 +190,8 @@ export const STYLES: Record<AiStyleId, AiStyle> = {
     callDown: 0.4,
     openSize: 2.6,
     threeBet: 1.3,
+    limpTendency: 0.08,
+    betSizing: 1.1,
   },
   isildur: {
     id: 'isildur',
@@ -182,6 +206,8 @@ export const STYLES: Record<AiStyleId, AiStyle> = {
     callDown: 0.55,
     openSize: 3.0,
     threeBet: 2.3,
+    limpTendency: 0.05,
+    betSizing: 1.3,
   },
   chan: {
     id: 'chan',
@@ -196,6 +222,8 @@ export const STYLES: Record<AiStyleId, AiStyle> = {
     callDown: 0.35,
     openSize: 2.4,
     threeBet: 1.1,
+    limpTendency: 0.04,
+    betSizing: 1.0,
   },
   ungar: {
     id: 'ungar',
@@ -210,6 +238,8 @@ export const STYLES: Record<AiStyleId, AiStyle> = {
     callDown: 0.45,
     openSize: 2.7,
     threeBet: 1.8,
+    limpTendency: 0.03,
+    betSizing: 1.1,
   },
 }
 

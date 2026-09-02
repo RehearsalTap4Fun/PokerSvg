@@ -20,6 +20,10 @@ export interface DecideContext {
   /** 其他座位的推断范围（公共观察者视角） */
   ranges: ReadonlyMap<number, Range>
   rng: Rng
+  /** 其他座位在本 AI 眼中的风格（对手模型；缺省 = 不做对手针对性调整） */
+  styleFor?: (seat: number) => AiStyle
+  /** 奖金结构（ICM 调整用；缺省 = 纯筹码 EV） */
+  payouts?: readonly number[]
 }
 
 /** 从（行动前的）牌局状态构造公开局面描述——decide 与 inference 观察共用 */
@@ -102,6 +106,26 @@ export function decideAi(ctx: DecideContext): Action {
       } else if (eq > needed + 0.15) {
         shiftMass(dist, ['fold'], 'call', Math.min(0.3, (eq - needed - 0.15) * 2))
         if (eq > 0.72) shiftMass(dist, ['call'], 'raise', 0.2)
+      }
+    }
+  }
+
+  // —— 对手针对性精修（有界）：面对下注者的诈唬倾向决定抓诈/让步；面对高频 3bet 者少弃牌 ——
+  if (ctx.styleFor && toCall > 0) {
+    const aggrSeat = state.lastAggressor
+    if (aggrSeat >= 0 && aggrSeat !== seat) {
+      const villain = ctx.styleFor(aggrSeat)
+      if (state.street !== 'preflop') {
+        const bucket = bucketOf(c1, c2, state.board)
+        const bluffiness = villain.bluffFreq / 0.12 // 相对紧凶基准
+        if (bucket === Bucket.WeakPair || bucket === Bucket.TopPair || bucket === Bucket.StrongDraw) {
+          if (bluffiness > 1.15) shiftMass(dist, ['fold'], 'call', Math.min(0.25, (bluffiness - 1) * 0.12))
+          else if (bluffiness < 0.8) shiftMass(dist, ['call'], 'fold', Math.min(0.2, (1 - bluffiness) * 0.3))
+        }
+      } else if (sit.line === 'vs3bet' && villain.threeBet > 1.4) {
+        const k = Math.min(0.2, (villain.threeBet - 1) * 0.1)
+        shiftMass(dist, ['fold'], 'call', k)
+        shiftMass(dist, ['fold'], 'raise', k * 0.4)
       }
     }
   }

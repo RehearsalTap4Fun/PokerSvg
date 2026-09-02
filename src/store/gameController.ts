@@ -7,7 +7,7 @@ import type { HandEvent } from '../core/events'
 import { initialRange, observeAction, observeBoard, type ObservedAction } from '../analysis/inference'
 import type { Range } from '../analysis/range'
 import { decideAi, situationFor } from '../ai/decide'
-import { styleOf } from '../ai/styles'
+import { OpponentModel } from './opponentModel'
 
 // 引擎与 UI 之间的桥：驱动"人类行动 ↔ AI 行动"主循环，维护事件流与范围推断。
 // 无时间概念、无 DOM 依赖——测试与 React UI 共用；UI 负责按节奏播放返回的事件。
@@ -28,19 +28,23 @@ export class GameController {
   /** 公共观察者视角的范围推断（HUD 展示时另行叠加英雄手牌做卡牌移除） */
   ranges = new Map<number, Range>()
   history: HandRecord[] = []
+  /** 对手模型：公开行为统计 → AI/推断眼中的每个座位风格（人类为动态推导） */
+  model: OpponentModel
   readonly humanSeat: number
   private actionCounter = 0
 
   constructor(config: TournamentConfig, humanSeat = 0) {
     this.ts = startTournament(config)
     this.humanSeat = humanSeat
+    this.model = new OpponentModel(this.ts.players)
   }
 
-  /** 从存档恢复（手与手之间保存的进度；范围推断是每手重建的，无需持久化） */
+  /** 从存档恢复（手与手之间保存的进度；范围推断是每手重建的，对手模型由历史重建） */
   static resume(ts: TournamentState, history: HandRecord[], humanSeat = 0): GameController {
     const gc = new GameController(ts.config, humanSeat)
     gc.ts = ts
     gc.history = history
+    for (const h of history) gc.model.observeHand(h.events)
     return gc
   }
 
@@ -93,7 +97,7 @@ export class GameController {
       action.type === 'check' ? 'check' : action.type === 'call' ? 'call' : action.type === 'fold' ? null : 'raise'
     if (obs) {
       const r = this.ranges.get(seat)
-      if (r) observeAction(r, styleOf(this.styleIdOf(seat)), sit, obs, state.board)
+      if (r) observeAction(r, this.model.styleFor(seat), sit, obs, state.board)
     }
     for (const e of events) if (e.t === 'street') this.observeStreet(e.cards)
 
@@ -107,9 +111,17 @@ export class GameController {
     const state = this.hand
     if (!state || state.street === 'done' || state.actionOn < 0 || this.isHumanTurn()) return null
     const seat = state.actionOn
-    const style = styleOf(this.styleIdOf(seat))
+    const style = this.model.styleFor(seat)
     const rng = mulberry32(mixSeed(state.seed, seat * 977 + this.actionCounter++))
-    const action = decideAi({ state, seat, style, ranges: this.ranges, rng })
+    const action = decideAi({
+      state,
+      seat,
+      style,
+      ranges: this.ranges,
+      rng,
+      styleFor: (s) => this.model.styleFor(s),
+      payouts: this.ts.config.payouts,
+    })
     return this.act(action)
   }
 
@@ -139,6 +151,7 @@ export class GameController {
 
   private finishHand(): void {
     const hand = this.hand!
+    this.model.observeHand(this.handEvents)
     const heroStart = hand.seats[this.humanSeat]?.startStack ?? 0
     const heroEnd = hand.seats[this.humanSeat]?.stack ?? 0
     this.history.push({

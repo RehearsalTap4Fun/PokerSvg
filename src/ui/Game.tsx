@@ -9,6 +9,10 @@ import { classIdOfCards } from '../core/handClass'
 import { positionOf } from '../ai/preflopCharts'
 import { SoundManager } from '../store/sound'
 import { analyzeTournament } from '../analysis/postmortem'
+import { ratesOf } from '../analysis/playerStats'
+import { describeProfile } from '../ai/adapt'
+import { icmRequiredEquity } from '../analysis/icm'
+import type { HudStatRow } from './Hud'
 import { Table } from './Table'
 import { ActionBar } from './ActionBar'
 import { Hud } from './Hud'
@@ -241,8 +245,35 @@ export function Game({
     return out
   }, [gc, events.length])
 
+  // 行为统计与"AI 眼中的你"：只在手与手之间变化
+  const statRows = useMemo<HudStatRow[]>(() => {
+    const h = gc.hand
+    return gc.ts.players
+      .filter((p) => p.rank === null || h?.seats[p.seat])
+      .map((p) => ({
+        seat: p.seat,
+        player: p,
+        rates: ratesOf(gc.model.counters(p.seat)),
+        active: !!h?.seats[p.seat] && !h.seats[p.seat]!.folded,
+      }))
+  }, [gc, gc.ts.handNo, events.length])
+  const heroProfile = useMemo(
+    () => (gc.humanSeat >= 0 ? describeProfile(gc.model.counters(gc.humanSeat), gc.model.styleFor(gc.humanSeat)) : null),
+    [gc, gc.ts.handNo],
+  )
+
   const pot = gc.hand ? gc.pot() : 0
   const toCall = humanTurn ? gc.humanLegal().callAmount : 0
+  // ICM 口径所需胜率：只在跟注会让英雄面临淘汰风险（跟注额 ≥ 剩余筹码的 40%）时展示
+  const icmNeeded = useMemo(() => {
+    const h = gc.hand
+    if (!h || !humanTurn || toCall <= 0 || !hero) return null
+    if (toCall < hero.stack * 0.4) return null
+    const r = icmRequiredEquity(h, gc.humanSeat, gc.ts.config.payouts)
+    if (r === null) return null
+    const chipNeeded = toCall / (pot + toCall)
+    return r - chipNeeded > 0.01 ? r : null
+  }, [gc, humanTurn, toCall, pot, hero])
   const level = gc.level()
   const untilUp = gc.handsUntilLevelUp()
   const heroClass = heroCards ? classIdOfCards(heroCards[0], heroCards[1]) : -1
@@ -326,6 +357,11 @@ export function Game({
             toCall={toCall}
             isHumanTurn={humanTurn}
             opponents={hudOpponents}
+            stats={statRows}
+            humanSeat={gc.humanSeat}
+            heroProfile={heroProfile}
+            icmNeeded={icmNeeded}
+            heroStack={hero?.stack ?? 0}
             onOpenChart={() => setChartOpen(true)}
           />
         ) : null}
