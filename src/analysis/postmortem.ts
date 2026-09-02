@@ -13,6 +13,7 @@ import { equityAuto, equityMC, rangeOfCombo } from './equity'
 import { uniformRange } from './range'
 import { requiredEquity } from './evCalc'
 import { Bucket, bucketOf } from './buckets'
+import { icmRequiredEquity } from './icm'
 
 // 赛后复盘分析：完全由对局记录以固定规则生成（确定性，无模型参与）。
 // 通过重放事件流重建每个英雄决策点（街/底池/需跟注额/位置/筹码深度/手牌类），
@@ -45,6 +46,8 @@ export interface PlayTypeStats {
   badBeats: number
   /** 最后决策时胜率 ≤28% 却赢下 */
   suckouts: number
+  /** 筹码口径可跟、但 ICM 口径胜率不足的重注跟注次数（泡沫期漏洞） */
+  icmLeaks: number
 }
 
 export interface PostmortemStats extends PlayTypeStats {
@@ -82,6 +85,10 @@ interface Decision {
   line: string
   raisesBeforeAction: number
   canRaise: boolean
+  /** 跟注可能导致淘汰时（跟注额 ≥ 剩余筹码 40%）的 ICM 口径所需胜率 */
+  icmNeeded: number | null
+  /** 行动时剩余筹码 */
+  stack: number
 }
 
 interface GotBluffedCase {
@@ -114,7 +121,7 @@ const STREET_ZH: Record<string, string> = { preflop: '翻前', flop: '翻牌', t
 const streetIdxOf: Record<string, number> = { preflop: 0, flop: 1, turn: 2, river: 3 }
 
 /** 重放一手牌，提取英雄的全部决策点、结果与对局类型标记 */
-function replayHand(rec: HandRecord, heroSeat: number): HandReplay | null {
+function replayHand(rec: HandRecord, heroSeat: number, payouts: readonly number[]): HandReplay | null {
   const start = rec.events[0]
   if (!start || start.t !== 'handStart') return null
   if (!start.seats.some((s) => s.seat === heroSeat)) return null
@@ -158,6 +165,19 @@ function replayHand(rec: HandRecord, heroSeat: number): HandReplay | null {
     ).equity
   }
 
+  /** 翻前重注跟注的胜率（ICM 评价用）：快照优先，缺失时对"前 30% 推牌范围"确定性补算 */
+  const preflopShoveEquity = (st: HandState): number | null => {
+    const hero = st.seats[heroSeat]
+    if (!hero?.holeCards) return null
+    const snap = snapEquity('preflop')
+    if (snap !== null) return snap
+    const shoveRange = uniformRange()
+    for (let i = 0; i < shoveRange.length; i++) shoveRange[i] = PERCENTILE[CLASS_OF_COMBO[i]] <= 0.3 ? 1 : 0
+    const opponents = st.seats.filter((s) => s && !s.folded && s.seat !== heroSeat).map(() => shoveRange)
+    if (opponents.length === 0) return null
+    return equityMC({ hero: [hero.holeCards[0], hero.holeCards[1]], board: [], opponents }, 1500, mulberry32(mixSeed(st.seed, 0x1c3))).equity
+  }
+
   /** 快照缺失时的确定性补算：对未弃牌对手的均匀范围 */
   const fallbackEquity = (st: HandState, streetIdx: number): number | null => {
     const hero = st.seats[heroSeat]
@@ -196,7 +216,13 @@ function replayHand(rec: HandRecord, heroSeat: number): HandReplay | null {
       const hero = state.seats[heroSeat]!
       const heroCards = hero.holeCards
       const street = state.street
-      const eq = street === 'preflop' ? null : (snapEquity(street) ?? fallbackEquity(state, streetIdxOf[street] ?? 0))
+      const heavyCall = legal.callAmount > 0 && legal.callAmount >= hero.stack * 0.4
+      const eq =
+        street === 'preflop'
+          ? heavyCall
+            ? preflopShoveEquity(state)
+            : null
+          : (snapEquity(street) ?? fallbackEquity(state, streetIdxOf[street] ?? 0))
       if (street === 'river' && eq !== null) heroRiverEquity = eq
       decisions.push({
         handNo: rec.handNo,
@@ -211,6 +237,8 @@ function replayHand(rec: HandRecord, heroSeat: number): HandReplay | null {
         line: sit.line,
         raisesBeforeAction: state.raisesThisStreet,
         canRaise: legal.canRaise,
+        icmNeeded: heavyCall ? icmRequiredEquity(state, heroSeat, payouts) : null,
+        stack: hero.stack,
       })
 
       const type = e.action.type
@@ -283,7 +311,12 @@ function replayHand(rec: HandRecord, heroSeat: number): HandReplay | null {
   }
 }
 
-export function analyzeTournament(history: readonly HandRecord[], players: readonly TournamentPlayer[], heroSeat: number): Postmortem {
+export function analyzeTournament(
+  history: readonly HandRecord[],
+  players: readonly TournamentPlayer[],
+  heroSeat: number,
+  payouts: readonly number[] = [450, 270, 180],
+): Postmortem {
   const me = players.find((p) => p.seat === heroSeat) ?? null
   const heroHands = history.filter((r) => {
     const s = r.events[0]
@@ -307,6 +340,7 @@ export function analyzeTournament(history: readonly HandRecord[], players: reado
     valueBetsPaid: 0,
     badBeats: 0,
     suckouts: 0,
+    icmLeaks: 0,
   }
   const allDecisions: Decision[] = []
   const perHand: { handNo: number; riverEq: number | null }[] = []
@@ -317,7 +351,7 @@ export function analyzeTournament(history: readonly HandRecord[], players: reado
   const suckoutCases: { handNo: number; eq: number }[] = []
 
   for (const rec of heroHands) {
-    const r = replayHand(rec, heroSeat)
+    const r = replayHand(rec, heroSeat, payouts)
     if (!r) continue
     allDecisions.push(...r.decisions)
     perHand.push({ handNo: rec.handNo, riverEq: r.heroRiverEquity })
@@ -355,6 +389,15 @@ export function analyzeTournament(history: readonly HandRecord[], players: reado
       }
     }
   }
+
+  // ICM 漏洞：重注跟注（可能被淘汰）筹码口径可跟、奖金口径胜率不足
+  const icmCalls = allDecisions
+    .filter((d) => d.action.action.type === 'call' && d.icmNeeded !== null && d.equity !== null && d.toCall > 0)
+    .map((d) => ({ d, chip: requiredEquity(d.pot, d.toCall), icm: d.icmNeeded as number, eq: d.equity as number }))
+    .filter((x) => x.eq >= x.chip - 0.02 && x.eq < x.icm - 0.03)
+    .sort((a, b) => b.icm - b.eq - (a.icm - a.eq))
+  play.icmLeaks = icmCalls.length
+  const heavyCalls = allDecisions.filter((d) => d.action.action.type === 'call' && d.icmNeeded !== null).length
 
   const n = heroHands.length
   const wins = deltas.filter((d) => d.delta > 0).sort((a, b) => b.delta - a.delta)
@@ -400,6 +443,22 @@ export function analyzeTournament(history: readonly HandRecord[], players: reado
   }
   if (badCalls.length === 0 && allDecisions.some((d) => d.street !== 'preflop' && d.action.action.type === 'call')) {
     findings.push({ rule: 'neg-ev-call', severity: 'good', text: '翻后所有跟注都符合底池赔率，赔率纪律良好' })
+  }
+
+  // R1b ICM：泡沫期/钱圈边缘的重注跟注要用奖金口径衡量
+  for (const x of icmCalls.slice(0, 2)) {
+    findings.push({
+      rule: 'icm-call',
+      severity: 'bad',
+      handNo: x.d.handNo,
+      text: `第 ${x.d.handNo} 手${STREET_ZH[x.d.street]}：跟注 ${fmtChips(x.d.toCall)}（剩余 ${fmtChips(x.d.stack)}）——筹码口径胜率约 ${(x.eq * 100).toFixed(0)}% ≥ 所需 ${(x.chip * 100).toFixed(0)}%，但按 ICM 需要 ${(x.icm * 100).toFixed(0)}%：淘汰风险让这类跟注亏奖金`,
+    })
+  }
+  if (icmCalls.length > 2) {
+    findings.push({ rule: 'icm-call', severity: 'bad', text: `共 ${icmCalls.length} 次"筹码正 EV、奖金负 EV"的重注跟注，以上仅列差距最大的 2 次` })
+  }
+  if (icmCalls.length === 0 && heavyCalls >= 2) {
+    findings.push({ rule: 'icm-call', severity: 'good', text: `${heavyCalls} 次可能被淘汰的重注跟注都满足 ICM 口径，泡沫期判断到位` })
   }
 
   // R2 被诈唬 / 弃掉领先牌（结果论）

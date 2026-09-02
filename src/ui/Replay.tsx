@@ -20,7 +20,7 @@ export function Replay({ ts, history, humanSeat, onBack }: { ts: TournamentState
   const [showRange, setShowRange] = useState(true)
   const [selOpp, setSelOpp] = useState(-1)
   const [pmOpen, setPmOpen] = useState(false)
-  const postmortem = useMemo(() => (pmOpen ? analyzeTournament(history, ts.players, humanSeat) : null), [pmOpen, history, ts, humanSeat])
+  const postmortem = useMemo(() => (pmOpen ? analyzeTournament(history, ts.players, humanSeat, ts.config.payouts) : null), [pmOpen, history, ts, humanSeat])
 
   const rec = history[handIdx] ?? null
   const events = rec?.events ?? []

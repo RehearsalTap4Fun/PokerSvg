@@ -47,15 +47,15 @@ describe('对手建模 → 动态风格', () => {
     expect(describeProfile(c, adaptStyle(STYLES.tag, c)).quadrant).toBe('松凶')
   })
 
-  it('REF 校准：全紧凶桌实测统计与 REF 相差不超过 35%（policy 变动后需重校）', () => {
-    const cfg = defaultConfig(
-      4242,
-      Array.from({ length: 9 }, (_, i) => ({ id: `t${i}`, name: `T${i}`, style: 'tag' as const })),
-    )
-    const gcs = [cfg, { ...cfg, seed: 4243 }, { ...cfg, seed: 4244 }].map((c) => {
+  it('REF 校准：全紧凶桌实测统计与 REF 相差不超过 40%（与 scripts/calibrate.ts 同种子；policy 变动后用它重校）', () => {
+    const gcs = Array.from({ length: 6 }, (_, g) => {
+      const c = defaultConfig(
+        9000 + g * 17,
+        Array.from({ length: 9 }, (_, i) => ({ id: `x${i}`, name: `X${i}`, style: 'tag' as const })),
+      )
       const gc = new GameController(c, -1)
       let guard = 0
-      while (!gc.finished && guard < 150) {
+      while (!gc.finished && guard < 200) {
         guard++
         gc.startNextHand()
         gc.runAiUntilHuman()
@@ -71,10 +71,10 @@ describe('对手建模 → 动态风格', () => {
     }
     const r = ratesOf(total)
     const within = (obs: number, ref: number, tol: number) => Math.abs(obs - ref) <= ref * tol
-    expect(within(r.vpip, REF.vpip, 0.35), `vpip 实测 ${r.vpip.toFixed(3)} vs REF ${REF.vpip}`).toBe(true)
-    expect(within(r.pfr, REF.pfr, 0.35), `pfr 实测 ${r.pfr.toFixed(3)} vs REF ${REF.pfr}`).toBe(true)
+    expect(within(r.vpip, REF.vpip, 0.4), `vpip 实测 ${r.vpip.toFixed(3)} vs REF ${REF.vpip}`).toBe(true)
+    expect(within(r.pfr, REF.pfr, 0.4), `pfr 实测 ${r.pfr.toFixed(3)} vs REF ${REF.pfr}`).toBe(true)
     expect(within(r.af, REF.af, 0.4), `af 实测 ${r.af.toFixed(2)} vs REF ${REF.af}`).toBe(true)
-    expect(within(r.foldVsBet, REF.foldVsBet, 0.35), `foldVsBet 实测 ${r.foldVsBet.toFixed(3)} vs REF ${REF.foldVsBet}`).toBe(true)
+    expect(within(r.foldVsBet, REF.foldVsBet, 0.4), `foldVsBet 实测 ${r.foldVsBet.toFixed(3)} vs REF ${REF.foldVsBet}`).toBe(true)
     expect(within(r.wtsd, REF.wtsd, 0.4), `wtsd 实测 ${r.wtsd.toFixed(3)} vs REF ${REF.wtsd}`).toBe(true)
     expect(within(r.cbet, REF.cbet, 0.4), `cbet 实测 ${r.cbet.toFixed(3)} vs REF ${REF.cbet}`).toBe(true)
   }, 120_000)

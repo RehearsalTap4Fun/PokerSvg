@@ -17,6 +17,15 @@ const SIT_UNOPENED: PublicSituation = {
   effBB: 75,
   nActive: 9,
   board: [],
+  raiseToBB: 1,
+  aggressorPos: null,
+  hasAnte: false,
+  inPosition: false,
+  isAggressor: false,
+  barreling: false,
+  spr: 50,
+  wetness: 0,
+  paired: false,
 }
 
 function openProb(styleId: keyof typeof STYLES, hand: string): number {

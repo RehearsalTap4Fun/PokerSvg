@@ -5,18 +5,19 @@ import type { AiStyle } from './styles'
 // 动态风格推导：把观察到的行为统计映射回 AiStyle 参数（贝叶斯收缩：样本少时贴近先验）。
 // 用途：AI 对人类玩家（无真实风格）的建模——推断范围与决策都据此进行，于是
 // 疯打的人会被 AI 更多地跟注/反击，被动的人会被更多地施压。
-// 参考值 REF = 紧凶基准 AI 在 9 人 SNG 中的实际统计（tests/adapt.test.ts 校验漂移）。
+// 参考值 REF = 紧凶基准 AI 在 9 人 SNG 中的实际统计（scripts/calibrate.ts 测得，tests/adapt.test.ts 校验漂移）。
+// 注：本 SNG 结构升盲快，多数摊牌来自翻前全下，故 WTSD 明显高于现金局常识值。
 
 export const REF = {
-  vpip: 0.25,
-  pfr: 0.18,
+  vpip: 0.23,
+  pfr: 0.17,
   threeBet: 0.05,
   limp: 0.02,
-  cbet: 0.36,
-  foldToCbet: 0.5,
-  af: 2.2,
-  foldVsBet: 0.46,
-  wtsd: 0.55,
+  cbet: 0.35,
+  foldToCbet: 0.35,
+  af: 2.3,
+  foldVsBet: 0.47,
+  wtsd: 0.65,
 }
 
 /** 收缩权重：n 个样本相对于先验强度 k */

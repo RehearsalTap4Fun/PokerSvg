@@ -17,6 +17,7 @@ export function PostmortemView({ data }: { data: Postmortem }) {
         <StatCell label="走向摊牌" value={s.wtsd > 0 ? pct(s.wtsd) : '—'} />
         <StatCell label="摊牌胜率" value={s.wtsd > 0 ? pct(s.wsd) : '—'} />
         <StatCell label="全下次数" value={String(s.allIns)} />
+        {s.icmLeaks > 0 ? <StatCell label="ICM 漏洞" value={String(s.icmLeaks)} hint="奖金负 EV 跟注" /> : null}
         {s.biggestWin ? <StatCell label="最大单手盈利" value={`+${fmtChips(s.biggestWin.delta)}`} hint={`第 ${s.biggestWin.handNo} 手`} /> : null}
         {s.biggestLoss ? <StatCell label="最大单手亏损" value={fmtChips(s.biggestLoss.delta)} hint={`第 ${s.biggestLoss.handNo} 手`} /> : null}
       </div>

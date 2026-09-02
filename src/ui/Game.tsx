@@ -281,7 +281,7 @@ export function Game({
   const me = gc.ts.players.find((p) => p.seat === gc.humanSeat)
   const spectating = me?.rank !== null && me?.rank !== undefined
   const postmortem = useMemo(
-    () => (resultOpen && gc.finished ? analyzeTournament(gc.history, gc.ts.players, gc.humanSeat) : null),
+    () => (resultOpen && gc.finished ? analyzeTournament(gc.history, gc.ts.players, gc.humanSeat, gc.ts.config.payouts) : null),
     [resultOpen, gc],
   )
 

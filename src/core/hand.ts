@@ -68,6 +68,8 @@ export function setupHand(input: HandSetupInput): { state: HandState; events: Ha
     lastFullRaiseSize: input.level.bb,
     lastAggressor: -1,
     raisesThisStreet: 0,
+    handAggressor: -1,
+    prevStreetAggressor: -1,
   }
 
   events.push({
@@ -190,6 +192,7 @@ export function applyAction(prev: HandState, action: Action): { state: HandState
       if (actor.stack === 0) actor.allIn = true
       state.currentBet = to
       state.lastAggressor = actor.seat
+      state.handAggressor = actor.seat
       state.raisesThisStreet++
       actor.actedAt = to
       break
@@ -229,6 +232,7 @@ function finishStreetAndAdvance(state: HandState, events: HandEvent[]): void {
     }
     state.currentBet = 0
     state.lastFullRaiseSize = state.level.bb
+    state.prevStreetAggressor = state.lastAggressor
     state.lastAggressor = -1
     state.raisesThisStreet = 0
     state.actionOn = -1

@@ -17,7 +17,7 @@ for (let g = 0; g < games; g++) {
   )
   const gc = new GameController(cfg, -1)
   let guard = 0
-  while (!gc.finished && guard < 400) {
+  while (!gc.finished && guard < 200) {
     guard++
     gc.startNextHand()
     gc.runAiUntilHuman()

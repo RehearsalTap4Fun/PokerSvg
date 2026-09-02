@@ -76,6 +76,10 @@ export interface HandState {
   lastAggressor: number
   /** 本条街的下注/加注次数（翻前 open=1、3bet=2…；线路推导用） */
   raisesThisStreet: number
+  /** 整手牌中最近一次下注/加注者（主动权归属；-1 = 尚无人加注，如 limp 底池） */
+  handAggressor: number
+  /** 上一条街的最后进攻者（连续下注/barrel 判定），-1 = 上街无人下注或本街为翻前 */
+  prevStreetAggressor: number
 }
 
 export interface LegalActions {
