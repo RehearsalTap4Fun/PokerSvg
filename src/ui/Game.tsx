@@ -2,7 +2,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { GameController } from '../store/gameController'
 import { buildView } from '../store/viewModel'
 import { HudEquity, type EquityUpdate } from '../store/hudController'
-import type { SaveData } from '../store/storage'
+import type { Prefs, SaveData } from '../store/storage'
+import { rangesAtCursor } from '../store/replayEngine'
+import { BUY_IN } from '../data/blindSchedule'
 import type { Action } from '../core/types'
 import type { HandEvent } from '../core/events'
 import { classIdOfCards } from '../core/handClass'
@@ -50,11 +52,15 @@ export function Game({
   gc,
   save,
   onSave,
+  prefs,
+  onPrefs,
   onExit,
 }: {
   gc: GameController
   save: SaveData
   onSave: (s: SaveData) => void
+  prefs: Prefs
+  onPrefs: (p: Prefs) => void
   onExit: () => void
 }) {
   const [cursor, setCursor] = useState(0)
@@ -111,9 +117,9 @@ export function Game({
       next.stats = {
         played: save.stats.played + 1,
         wins: save.stats.wins + (me?.rank === 1 ? 1 : 0),
-        cashes: save.stats.cashes + (me?.rank !== null && me !== undefined && (me.rank ?? 99) <= 3 ? 1 : 0),
+        cashes: save.stats.cashes + (me?.rank !== null && me !== undefined && (me.rank ?? 99) <= gc.ts.config.payouts.length ? 1 : 0),
         totalPrize: save.stats.totalPrize + (me?.prize ?? 0),
-        totalBuyin: save.stats.totalBuyin + 100,
+        totalBuyin: save.stats.totalBuyin + BUY_IN,
       }
       next.ongoing = null
       next.archive = [...save.archive, { finishedAt: new Date().toISOString(), ts: gc.ts, history: gc.history }]
@@ -169,6 +175,12 @@ export function Game({
     // 人类回合：等待输入
   }, [cursor, caughtUp, done, hand, events, speed, resultOpen, gc, bump, persistAfterHand])
 
+  // 展示用范围：上帝视角 = 引擎内的推断（AI 真实策略）；诚实模式 = 只用可观察统计重算（AI 自身决策不受影响）
+  const displayRanges = useMemo(
+    () => (prefs.honest && events.length > 0 ? rangesAtCursor(events, events.length, (seat) => gc.model.honestStyleFor(seat)) : gc.ranges),
+    [prefs.honest, events, events.length, gc],
+  )
+
   // 胜率计算：每个新事件后（范围已更新）重新请求
   useEffect(() => {
     const h = gc.hand
@@ -179,7 +191,7 @@ export function Game({
     const opponents: Parameters<HudEquity['request']>[2] = []
     for (const s of h.seats) {
       if (s && !s.folded && s.seat !== gc.humanSeat) {
-        const r = gc.ranges.get(s.seat)
+        const r = displayRanges.get(s.seat)
         if (r) opponents.push(r)
       }
     }
@@ -188,7 +200,7 @@ export function Game({
       return
     }
     hudRef.current?.request([heroCards[0], heroCards[1]], h.board, opponents)
-  }, [events.length, gc, heroCards, heroAlive, hand?.street])
+  }, [events.length, gc, heroCards, heroAlive, hand?.street, displayRanges])
 
   // 每街胜率快照（记录该街的最新计算结果）
   useEffect(() => {
@@ -237,13 +249,13 @@ export function Game({
     const out: { seat: number; player: (typeof gc.ts.players)[number]; range: NonNullable<ReturnType<typeof gc.ranges.get>> }[] = []
     for (const s of h.seats) {
       if (s && !s.folded && s.seat !== gc.humanSeat) {
-        const r = gc.ranges.get(s.seat)
+        const r = displayRanges.get(s.seat)
         const p = gc.ts.players.find((x) => x.seat === s.seat)
         if (r && p) out.push({ seat: s.seat, player: p, range: r })
       }
     }
     return out
-  }, [gc, events.length])
+  }, [gc, events.length, displayRanges])
 
   // 行为统计与"AI 眼中的你"：只在手与手之间变化
   const statRows = useMemo<HudStatRow[]>(() => {
@@ -277,7 +289,7 @@ export function Game({
   const level = gc.level()
   const untilUp = gc.handsUntilLevelUp()
   const heroClass = heroCards ? classIdOfCards(heroCards[0], heroCards[1]) : -1
-  const heroPos = hand && hero ? positionOf(gc.humanSeat, hand.buttonSeat, hand.sbSeat, hand.bbSeat, hand.seats.filter(Boolean).length) : null
+  const heroPos = hand && hero ? positionOf(gc.humanSeat, hand.buttonSeat, hand.sbSeat, hand.bbSeat, hand.seats.filter(Boolean).map((s) => s!.seat)) : null
   const me = gc.ts.players.find((p) => p.seat === gc.humanSeat)
   const spectating = me?.rank !== null && me?.rank !== undefined
   const postmortem = useMemo(
@@ -336,7 +348,7 @@ export function Game({
             revealAll={false}
             showStyleTags={styleTags}
             levelText={`盲注 ${level.sb}/${level.bb}${level.ante > 0 ? ` · ante ${level.ante}` : ''}`}
-            subText={`奖池 900 · 冠军 450`}
+            subText={`奖池 ${gc.ts.config.payouts.reduce((a, b) => a + b, 0)} · 冠军 ${gc.ts.config.payouts[0]}`}
           />
           <div className="action-area">
             {humanTurn && !done ? (
@@ -362,6 +374,8 @@ export function Game({
             heroProfile={heroProfile}
             icmNeeded={icmNeeded}
             heroStack={hero?.stack ?? 0}
+            honest={prefs.honest}
+            onToggleHonest={(h) => onPrefs({ ...prefs, honest: h })}
             onOpenChart={() => setChartOpen(true)}
           />
         ) : null}

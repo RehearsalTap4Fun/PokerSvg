@@ -43,6 +43,19 @@ export class OpponentModel {
     return this.totals.get(seat) ?? emptyCounters()
   }
 
+  /**
+   * "诚实模式"下的风格：不看任何 AI 的真实参数，只按公开统计以紧凶为先验推导——
+   * 真实牌桌上你能对对手做出的最好假设。所有座位一视同仁。
+   */
+  honestStyleFor(seat: number): AiStyle {
+    const key = -1 - seat
+    const hit = this.styleCache.get(key)
+    if (hit) return hit
+    const style = adaptStyle(STYLES.tag, this.counters(seat))
+    this.styleCache.set(key, style)
+    return style
+  }
+
   /** 该座位在 AI/推断眼中的风格 */
   styleFor(seat: number): AiStyle {
     const hit = this.styleCache.get(seat)

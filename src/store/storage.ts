@@ -65,6 +65,44 @@ export function persistSave(data: SaveData): void {
   }
 }
 
+// —— 偏好（与存档分离，改动不影响进度） ——
+
+const PREFS_KEY = 'poker-prefs-v1'
+
+export interface Prefs {
+  roster: 'legend' | 'classic'
+  size: 9 | 6 | 2
+  structure: 'standard' | 'turbo' | 'deep'
+  /** 诚实推断：范围推断只用可观察统计，不用 AI 真实策略 */
+  honest: boolean
+}
+
+export const DEFAULT_PREFS: Prefs = { roster: 'legend', size: 9, structure: 'standard', honest: false }
+
+export function loadPrefs(): Prefs {
+  try {
+    const raw = localStorage.getItem(PREFS_KEY)
+    if (!raw) return { ...DEFAULT_PREFS }
+    const p = JSON.parse(raw) as Partial<Prefs>
+    return {
+      roster: p.roster === 'classic' ? 'classic' : 'legend',
+      size: p.size === 6 || p.size === 2 ? p.size : 9,
+      structure: p.structure === 'turbo' || p.structure === 'deep' ? p.structure : 'standard',
+      honest: !!p.honest,
+    }
+  } catch {
+    return { ...DEFAULT_PREFS }
+  }
+}
+
+export function persistPrefs(p: Prefs): void {
+  try {
+    localStorage.setItem(PREFS_KEY, JSON.stringify(p))
+  } catch {
+    /* ignore */
+  }
+}
+
 export function clearSave(): void {
   try {
     localStorage.removeItem(KEY)

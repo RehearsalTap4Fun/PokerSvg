@@ -22,15 +22,21 @@ export const POSITION_ZH: Record<Position, string> = {
 
 /**
  * 由座位与按钮/盲注位推导位置档。
- * distance = 按钮后顺时针步数（1=SB, 2=BB, ...）
+ * occupied = 本手有玩家的座位集合（座位可能稀疏，如 6 人桌），距离按"之间的玩家数"而非座位号差计算。
  */
-export function positionOf(seat: number, buttonSeat: number, sbSeat: number | null, bbSeat: number, playersInHand: number): Position {
+export function positionOf(seat: number, buttonSeat: number, sbSeat: number | null, bbSeat: number, occupied: readonly number[]): Position {
   if (seat === buttonSeat) return 'button'
   if (seat === sbSeat) return 'sb'
   if (seat === bbSeat) return 'bb'
-  // 其余按到按钮的逆时针距离分早中晚
-  const dist = (buttonSeat - seat + 9) % 9 // 离按钮越近越晚
-  if (playersInHand <= 4) return 'late'
+  const n = occupied.length
+  if (n <= 4) return 'late'
+  // 从 seat 顺时针走到按钮（含）经过的占用座位数：CO=1，HJ=2…
+  let dist = 0
+  for (let i = 1; i <= 9; i++) {
+    const s = (seat + i) % 9
+    if (occupied.includes(s)) dist++
+    if (s === buttonSeat) break
+  }
   if (dist <= 2) return 'late'
   if (dist <= 4) return 'middle'
   return 'early'

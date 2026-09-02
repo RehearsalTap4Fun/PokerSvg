@@ -9,6 +9,8 @@ import type { HandRecord } from '../store/gameController'
 import { situationFor } from '../ai/decide'
 import { PERCENTILE } from '../ai/preflopCharts'
 import { shouldPush } from '../ai/pushFold'
+import { policyForCombo } from '../ai/policy'
+import { STYLES } from '../ai/styles'
 import { equityAuto, equityMC, rangeOfCombo } from './equity'
 import { uniformRange } from './range'
 import { requiredEquity } from './evCalc'
@@ -65,11 +67,26 @@ export interface PostmortemStats extends PlayTypeStats {
   preflopFoldRate: number
   biggestWin: { handNo: number; delta: number } | null
   biggestLoss: { handNo: number; delta: number } | null
+  /** 面对下注的跟注/弃牌相对最优（按当时胜率）的合计筹码损失 */
+  evLoss: number
+  /** 翻前偏松：基准≥90%弃牌的手牌却入池 */
+  looseDeviations: number
+  /** 翻前偏紧：基准≤10%弃牌的手牌却弃掉 */
+  tightDeviations: number
+}
+
+/** 红蓝线：累计盈亏拆分为摊牌盈亏（蓝）与非摊牌盈亏（红） */
+export interface CurvePoint {
+  handNo: number
+  total: number
+  showdown: number
+  nonShowdown: number
 }
 
 export interface Postmortem {
   stats: PostmortemStats
   findings: Finding[]
+  curve: CurvePoint[]
 }
 
 interface Decision {
@@ -89,6 +106,8 @@ interface Decision {
   icmNeeded: number | null
   /** 行动时剩余筹码 */
   stack: number
+  /** 翻前：紧凶基准在该局面对该手牌的弃牌概率（用于松/紧偏离判定） */
+  baselineFold: number | null
 }
 
 interface GotBluffedCase {
@@ -115,9 +134,12 @@ interface HandReplay {
   valueBetPaid: boolean
   /** 最后一次英雄行动时（发牌未完）对对手真实手牌的胜率 */
   finalEq: number | null
+  /** 本手面对下注决策的合计 EV 损失（筹码） */
+  evLoss: number
 }
 
 const STREET_ZH: Record<string, string> = { preflop: '翻前', flop: '翻牌', turn: '转牌', river: '河牌' }
+const POSITION_HINT: Record<string, string> = { early: '前位', middle: '中位', late: '后位', button: '按钮', sb: '小盲', bb: '大盲' }
 const streetIdxOf: Record<string, number> = { preflop: 0, flop: 1, turn: 2, river: 3 }
 
 /** 重放一手牌，提取英雄的全部决策点、结果与对局类型标记 */
@@ -239,6 +261,8 @@ function replayHand(rec: HandRecord, heroSeat: number, payouts: readonly number[
         canRaise: legal.canRaise,
         icmNeeded: heavyCall ? icmRequiredEquity(state, heroSeat, payouts) : null,
         stack: hero.stack,
+        baselineFold:
+          street === 'preflop' && heroCards && sit.line !== 'vsShove' ? policyForCombo(STYLES.tag, sit, comboIndex(heroCards[0], heroCards[1])).fold : null,
       })
 
       const type = e.action.type
@@ -293,8 +317,18 @@ function replayHand(rec: HandRecord, heroSeat: number, payouts: readonly number[
     }
   }
 
+  // EV 损失：面对下注时（胜率已知）跟注 vs 弃牌相对最优的差；加注不评估
+  let evLoss = 0
+  for (const d of decisions) {
+    if (d.toCall <= 0 || d.equity === null) continue
+    const callEv = d.equity * (d.pot + d.toCall) - d.toCall
+    if (d.action.action.type === 'call') evLoss += Math.max(0, -callEv)
+    else if (d.action.action.type === 'fold') evLoss += Math.max(0, callEv)
+  }
+
   return {
     decisions,
+    evLoss,
     heroFoldedPreflop,
     sawFlop,
     showdown,
@@ -343,6 +377,10 @@ export function analyzeTournament(
     icmLeaks: 0,
   }
   const allDecisions: Decision[] = []
+  const curve: CurvePoint[] = []
+  let cumSd = 0
+  let cumNsd = 0
+  const handEvLoss: { handNo: number; loss: number }[] = []
   const perHand: { handNo: number; riverEq: number | null }[] = []
   const deltas: { handNo: number; delta: number }[] = []
   const gotBluffedCases: GotBluffedCase[] = []
@@ -356,6 +394,10 @@ export function analyzeTournament(
     allDecisions.push(...r.decisions)
     perHand.push({ handNo: rec.handNo, riverEq: r.heroRiverEquity })
     deltas.push({ handNo: rec.handNo, delta: r.delta })
+    if (r.showdown) cumSd += r.delta
+    else cumNsd += r.delta
+    curve.push({ handNo: rec.handNo, total: cumSd + cumNsd, showdown: cumSd, nonShowdown: cumNsd })
+    if (r.evLoss > 0) handEvLoss.push({ handNo: rec.handNo, loss: r.evLoss })
     const pre = r.decisions.filter((d) => d.street === 'preflop')
     if (pre.some((d) => d.action.action.type === 'call' || d.action.action.type === 'raise' || d.action.action.type === 'bet')) vpipCount++
     if (pre.some((d) => d.action.action.type === 'raise' || d.action.action.type === 'bet')) pfrCount++
@@ -399,6 +441,13 @@ export function analyzeTournament(
   play.icmLeaks = icmCalls.length
   const heavyCalls = allDecisions.filter((d) => d.action.action.type === 'call' && d.icmNeeded !== null).length
 
+  // 翻前相对紧凶基准的松/紧偏离（只看基准态度明确的手牌：弃牌率 ≥90% 却入池 / ≤10% 却弃）
+  const looseDevs = allDecisions.filter(
+    (d) => d.street === 'preflop' && d.baselineFold !== null && d.baselineFold >= 0.9 && (d.action.action.type === 'call' || d.action.action.type === 'raise' || d.action.action.type === 'bet'),
+  )
+  const tightDevs = allDecisions.filter((d) => d.street === 'preflop' && d.baselineFold !== null && d.baselineFold <= 0.1 && d.action.action.type === 'fold')
+  const evLossTotal = handEvLoss.reduce((s, x) => s + x.loss, 0)
+
   const n = heroHands.length
   const wins = deltas.filter((d) => d.delta > 0).sort((a, b) => b.delta - a.delta)
   const losses = deltas.filter((d) => d.delta < 0).sort((a, b) => a.delta - b.delta)
@@ -419,6 +468,9 @@ export function analyzeTournament(
     biggestWin: wins[0] ?? null,
     biggestLoss: losses[0] ?? null,
     ...play,
+    evLoss: Math.round(evLossTotal),
+    looseDeviations: looseDevs.length,
+    tightDeviations: tightDevs.length,
   }
 
   // —— 固定规则诊断 ——
@@ -443,6 +495,44 @@ export function analyzeTournament(
   }
   if (badCalls.length === 0 && allDecisions.some((d) => d.street !== 'preflop' && d.action.action.type === 'call')) {
     findings.push({ rule: 'neg-ev-call', severity: 'good', text: '翻后所有跟注都符合底池赔率，赔率纪律良好' })
+  }
+
+  // R1a EV 损失：按当时胜率衡量的跟注/弃牌决策损失（筹码）
+  const bbNow = history.length > 0 && history[history.length - 1].events[0]?.t === 'handStart' ? (history[history.length - 1].events[0] as { level: { bb: number } }).level.bb : 20
+  const worst = [...handEvLoss].sort((a, b) => b.loss - a.loss)
+  for (const x of worst.slice(0, 2)) {
+    if (x.loss < bbNow * 0.5) break
+    findings.push({
+      rule: 'ev-loss',
+      severity: x.loss >= bbNow * 2 ? 'bad' : 'warn',
+      handNo: x.handNo,
+      text: `第 ${x.handNo} 手：面对下注的跟注/弃牌选择合计偏离最优约 ${fmtChips(Math.round(x.loss))} 筹码（按当时对推断范围的胜率计算）`,
+    })
+  }
+  if (evLossTotal > 0) {
+    findings.push({
+      rule: 'ev-loss',
+      severity: evLossTotal >= bbNow * 6 ? 'warn' : 'info',
+      text: `全场面对下注的跟注/弃牌决策合计损失约 ${fmtChips(Math.round(evLossTotal))} 筹码（≈ ${(evLossTotal / bbNow).toFixed(1)} 个当前大盲）`,
+    })
+  }
+
+  // R1c 翻前偏离基准
+  const devName = (d: Decision) => (d.classId >= 0 ? className(d.classId) : '?')
+  if (looseDevs.length >= 3) {
+    const ex = looseDevs.slice(0, 2).map((d) => `第 ${d.handNo} 手${POSITION_HINT[d.position] ?? ''}用 ${devName(d)} 入池`).join('；')
+    findings.push({ rule: 'preflop-loose', severity: 'warn', handNo: looseDevs[0].handNo, text: `翻前 ${looseDevs.length} 次用基准明确应弃的牌入池（${ex}）——这些牌在该位置长期是亏的` })
+  } else if (looseDevs.length > 0) {
+    findings.push({ rule: 'preflop-loose', severity: 'info', handNo: looseDevs[0].handNo, text: `翻前 ${looseDevs.length} 次用基准应弃的牌入池（第 ${looseDevs[0].handNo} 手 ${devName(looseDevs[0])}）` })
+  }
+  if (tightDevs.length >= 3) {
+    const ex = tightDevs.slice(0, 2).map((d) => `第 ${d.handNo} 手${POSITION_HINT[d.position] ?? ''}弃掉 ${devName(d)}`).join('；')
+    findings.push({ rule: 'preflop-tight', severity: 'warn', handNo: tightDevs[0].handNo, text: `翻前 ${tightDevs.length} 次弃掉基准明确应打的牌（${ex}）——过紧会被盲注磨死，尤其后位` })
+  } else if (tightDevs.length > 0) {
+    findings.push({ rule: 'preflop-tight', severity: 'info', handNo: tightDevs[0].handNo, text: `翻前 ${tightDevs.length} 次弃掉基准应打的牌（第 ${tightDevs[0].handNo} 手 ${devName(tightDevs[0])}）` })
+  }
+  if (looseDevs.length === 0 && tightDevs.length === 0 && allDecisions.some((d) => d.street === 'preflop')) {
+    findings.push({ rule: 'preflop-dev', severity: 'good', text: '翻前手牌选择与紧凶基准没有明确冲突' })
   }
 
   // R1b ICM：泡沫期/钱圈边缘的重注跟注要用奖金口径衡量
@@ -587,5 +677,5 @@ export function analyzeTournament(
   const order: Record<Severity, number> = { bad: 0, warn: 1, info: 2, good: 3 }
   findings.sort((a, b) => order[a.severity] - order[b.severity])
 
-  return { stats, findings }
+  return { stats, findings, curve }
 }

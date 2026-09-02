@@ -36,10 +36,29 @@ export interface HudProps {
   icmNeeded: number | null
   /** 英雄可用于加注的最小尺度与筹码（诈唬盈亏平衡展示用） */
   heroStack: number
+  /** 诚实推断模式（只用可观察统计） */
+  honest: boolean
+  onToggleHonest: (honest: boolean) => void
   onOpenChart: () => void
 }
 
-export function Hud({ equity, heroCards, board, pot, toCall, isHumanTurn, opponents, stats, humanSeat, heroProfile, icmNeeded, heroStack, onOpenChart }: HudProps) {
+export function Hud({
+  equity,
+  heroCards,
+  board,
+  pot,
+  toCall,
+  isHumanTurn,
+  opponents,
+  stats,
+  humanSeat,
+  heroProfile,
+  icmNeeded,
+  heroStack,
+  honest,
+  onToggleHonest,
+  onOpenChart,
+}: HudProps) {
   const [tab, setTab] = useState<'equity' | 'range' | 'stats'>('equity')
   const [selOpp, setSelOpp] = useState<number>(-1)
 
@@ -87,7 +106,9 @@ export function Hud({ equity, heroCards, board, pot, toCall, isHumanTurn, oppone
                 平局率 {((equity?.tie ?? 0) * 100).toFixed(1)}%
                 {!equity?.exact ? ` · ${Math.round((equity?.trials ?? 0) / 1000)}k 次模拟${equity?.done ? '' : '…'}` : ''}
               </div>
-              <div className="equity-note">对 {opponents.length} 个未弃牌对手的推断范围</div>
+              <div className="equity-note">
+                对 {opponents.length} 个未弃牌对手的推断范围{honest ? '（诚实模式：仅按可观察统计）' : ''}
+              </div>
               {toCall > 0 && isHumanTurn ? (
                 <div className="ev-panel">
                   <div className="ev-row">
@@ -156,7 +177,18 @@ export function Hud({ equity, heroCards, board, pot, toCall, isHumanTurn, oppone
                   }
                 />
               ) : null}
-              <div className="hud-note">颜色越深 = 该手牌类在其推断范围中的权重越高（已按行动线贝叶斯收窄）</div>
+              <div className="mode-toggle" title="上帝视角借用 AI 的真实策略反推；诚实模式只用你在牌桌上能观察到的行为统计（以紧凶为先验）">
+                <button className={!honest ? 'active' : ''} onClick={() => onToggleHonest(false)}>
+                  上帝视角
+                </button>
+                <button className={honest ? 'active' : ''} onClick={() => onToggleHonest(true)}>
+                  诚实模式
+                </button>
+              </div>
+              <div className="hud-note">
+                颜色越深 = 该手牌类在其推断范围中的权重越高（已按行动线贝叶斯收窄）。
+                {honest ? '诚实模式下推断不知道 AI 的真实参数，只按其公开统计推——真实牌桌上你能做到的最好假设。' : '上帝视角借用了每个 AI 的真实策略函数。'}
+              </div>
             </>
           ) : (
             <div className="hud-empty">无活跃对手</div>

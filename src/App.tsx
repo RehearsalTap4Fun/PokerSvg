@@ -1,8 +1,8 @@
 import { useCallback, useRef, useState } from 'react'
 import { GameController } from './store/gameController'
-import { loadSave, persistSave, type SaveData } from './store/storage'
-import { defaultConfig } from './data/blindSchedule'
-import { rosterFor, type RosterKind } from './data/aiNames'
+import { loadPrefs, loadSave, persistPrefs, persistSave, type Prefs, type SaveData } from './store/storage'
+import { BUY_IN, presetConfig } from './data/blindSchedule'
+import { rosterFor } from './data/aiNames'
 import { randomSeed } from './core/rng'
 import type { TournamentConfig } from './core/types'
 import { Lobby } from './ui/Lobby'
@@ -11,15 +11,17 @@ import { Replay } from './ui/Replay'
 
 type Screen = { kind: 'lobby' } | { kind: 'game' } | { kind: 'replay'; archiveIdx: number | 'ongoing' }
 
-function mkConfig(roster: RosterKind): TournamentConfig {
-  return defaultConfig(randomSeed(), [
+function mkConfig(prefs: Prefs): TournamentConfig {
+  const ais = rosterFor(prefs.roster).slice(0, prefs.size - 1)
+  return presetConfig(randomSeed(), { size: prefs.size, structure: prefs.structure }, [
     { id: 'human', name: '你', style: 'human' },
-    ...rosterFor(roster).map((a) => ({ id: a.id, name: a.name, style: a.style })),
+    ...ais.map((a) => ({ id: a.id, name: a.name, style: a.style })),
   ])
 }
 
 export default function App() {
   const [save, setSave] = useState<SaveData>(() => loadSave())
+  const [prefs, setPrefs] = useState<Prefs>(() => loadPrefs())
   const [screen, setScreen] = useState<Screen>({ kind: 'lobby' })
   const gcRef = useRef<GameController | null>(null)
 
@@ -28,10 +30,15 @@ export default function App() {
     persistSave(next)
   }, [])
 
-  const startNew = useCallback((roster: RosterKind) => {
-    gcRef.current = new GameController(mkConfig(roster), 0)
-    setScreen({ kind: 'game' })
+  const onPrefs = useCallback((next: Prefs) => {
+    setPrefs(next)
+    persistPrefs(next)
   }, [])
+
+  const startNew = useCallback(() => {
+    gcRef.current = new GameController(mkConfig(prefs), 0)
+    setScreen({ kind: 'game' })
+  }, [prefs])
 
   const resume = useCallback(() => {
     if (!save.ongoing) return
@@ -39,30 +46,29 @@ export default function App() {
     setScreen({ kind: 'game' })
   }, [save])
 
-  const abandon = useCallback(
-    (roster: RosterKind) => {
-      const next: SaveData = { ...save, ongoing: null, stats: { ...save.stats, played: save.stats.played + 1, totalBuyin: save.stats.totalBuyin + 100 } }
-      onSave(next)
-      gcRef.current = new GameController(mkConfig(roster), 0)
-      setScreen({ kind: 'game' })
-    },
-    [save, onSave],
-  )
+  const abandon = useCallback(() => {
+    const next: SaveData = { ...save, ongoing: null, stats: { ...save.stats, played: save.stats.played + 1, totalBuyin: save.stats.totalBuyin + BUY_IN } }
+    onSave(next)
+    gcRef.current = new GameController(mkConfig(prefs), 0)
+    setScreen({ kind: 'game' })
+  }, [save, onSave, prefs])
 
   if (screen.kind === 'game' && gcRef.current) {
-    return <Game gc={gcRef.current} save={save} onSave={onSave} onExit={() => setScreen({ kind: 'lobby' })} />
+    return <Game gc={gcRef.current} save={save} onSave={onSave} prefs={prefs} onPrefs={onPrefs} onExit={() => setScreen({ kind: 'lobby' })} />
   }
 
   if (screen.kind === 'replay') {
     const target = screen.archiveIdx === 'ongoing' ? save.ongoing : save.archive[screen.archiveIdx]
     if (target) {
-      return <Replay ts={target.ts} history={target.history} humanSeat={0} onBack={() => setScreen({ kind: 'lobby' })} />
+      return <Replay ts={target.ts} history={target.history} humanSeat={0} prefs={prefs} onPrefs={onPrefs} onBack={() => setScreen({ kind: 'lobby' })} />
     }
   }
 
   return (
     <Lobby
       save={save}
+      prefs={prefs}
+      onPrefs={onPrefs}
       onStart={startNew}
       onResume={resume}
       onAbandon={abandon}

@@ -121,7 +121,8 @@ export interface TournamentConfig {
   levels: BlindLevel[]
   /** 名次奖金（虚拟币），下标 0 = 冠军 */
   payouts: number[]
-  players: { id: string; name: string; style: AiStyleId | 'human' }[]
+  /** 座位可选：不填按下标；6 人/单挑用稀疏座位以便牌桌布局均衡 */
+  players: { id: string; name: string; style: AiStyleId | 'human'; seat?: number }[]
 }
 
 export interface TournamentPlayer {

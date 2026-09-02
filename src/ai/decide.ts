@@ -41,7 +41,8 @@ export function situationFor(state: HandState, seat: number): PublicSituation {
   const me = state.seats[seat]
   if (!me) throw new Error(`座位 ${seat} 为空`)
   const bb = state.level.bb
-  const playersInHand = state.seats.filter((s) => s !== null).length
+  const occupied: number[] = []
+  for (const s of state.seats) if (s) occupied.push(s.seat)
   const contenders = state.seats.filter((s) => s && !s.folded)
   const toCall = Math.max(0, state.currentBet - me.committed)
 
@@ -69,7 +70,7 @@ export function situationFor(state: HandState, seat: number): PublicSituation {
     line = state.raisesThisStreet === 0 ? 'noBet' : state.raisesThisStreet === 1 ? 'vsBet' : 'vsRaise'
   }
 
-  const posOf = (s: number): Position => positionOf(s, state.buttonSeat, state.sbSeat, state.bbSeat, playersInHand)
+  const posOf = (s: number): Position => positionOf(s, state.buttonSeat, state.sbSeat, state.bbSeat, occupied)
   const aggressorPos = state.lastAggressor >= 0 && state.seats[state.lastAggressor] ? posOf(state.lastAggressor) : null
 
   // 翻后位置：在所有仍可行动（未弃牌、未 all-in）的对手之后行动 = 有位置

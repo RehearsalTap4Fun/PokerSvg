@@ -116,7 +116,9 @@ function policyPreflop(style: AiStyle, sit: PublicSituation, classId: number): A
         // 理论上不出现（BB 无人入池即 walk）；防御性返回
         return { fold: 0, check: 1, call: 0, raise: 0 }
       }
-      const raiseP = widen(RFI[rfiPos], raiseLoose)[classId]
+      // 单挑：小盲（=按钮）开牌极宽
+      const hu = sit.nActive === 2 && sit.position === 'sb' ? 1.8 : 1
+      const raiseP = widen(RFI[rfiPos], raiseLoose * hu)[classId]
       // limp：范围比开牌宽得多，频率由风格的 limpTendency 决定
       const limpP = (1 - raiseP) * widen(RFI[rfiPos], clamp(loose * 2.2, 1, 5))[classId] * style.limpTendency
       return normalizeDist({ fold: 1 - raiseP - limpP, check: 0, call: limpP, raise: raiseP })
@@ -134,8 +136,9 @@ function policyPreflop(style: AiStyle, sit: PublicSituation, classId: number): A
       const og = posGroup(sit.aggressorPos ?? 'late')
       const threeP = widen(THREEBET, style.threeBet * OPENER_3BET_MULT[og])[classId]
       const callTable = sit.position === 'bb' ? BB_DEFEND : CALL_VS_OPEN
+      const huDefend = sit.nActive === 2 && sit.position === 'bb' ? 1.35 : 1
       const callMult =
-        POS_CALL_MULT[sit.position] * OPENER_CALL_MULT[og] * sizeCallMult(sit.raiseToBB) * Math.pow(loose, 0.8) * (0.8 + style.callDown * 0.5)
+        POS_CALL_MULT[sit.position] * OPENER_CALL_MULT[og] * sizeCallMult(sit.raiseToBB) * Math.pow(loose, 0.8) * (0.8 + style.callDown * 0.5) * huDefend
       const callP = (1 - threeP) * widen(callTable, callMult)[classId]
       return normalizeDist({ fold: 1 - threeP - callP, check: 0, call: callP, raise: threeP })
     }

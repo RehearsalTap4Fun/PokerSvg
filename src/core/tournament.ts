@@ -9,19 +9,25 @@ export function startTournament(config: TournamentConfig): TournamentState {
   if (config.players.length < 2 || config.players.length > SEAT_COUNT) {
     throw new Error(`玩家数需在 2-${SEAT_COUNT} 之间`)
   }
-  const players = config.players.map((p, i) => ({
+  const seatsUsed = new Set<number>()
+  const players = config.players.map((p, i) => {
+    const seat = p.seat ?? i
+    if (seat < 0 || seat >= SEAT_COUNT || seatsUsed.has(seat)) throw new Error(`座位 ${seat} 非法或重复`)
+    seatsUsed.add(seat)
+    return {
     id: p.id,
     name: p.name,
     style: p.style,
-    seat: i,
+    seat,
     stack: config.startingStack,
     rank: null as number | null,
     prize: 0,
-  }))
-  // 抽按钮
+  }
+  })
+  // 抽按钮（在实际占用的座位中抽）
   const rng = mulberry32(mixSeed(config.seed, 0xb001))
-  const buttonSeat = Math.floor(rng() * players.length)
-  const aliveSeats = players.map((p) => p.seat)
+  const aliveSeats = players.map((p) => p.seat).sort((a, b) => a - b)
+  const buttonSeat = aliveSeats[Math.floor(rng() * aliveSeats.length)]
   const sbSeat = nextIn(aliveSeats, buttonSeat)
   const bbSeat = nextIn(aliveSeats, sbSeat)
   return { config, handNo: 0, players, buttonSeat, sbSeat, bbSeat, finished: false }

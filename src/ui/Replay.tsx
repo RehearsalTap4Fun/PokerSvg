@@ -1,10 +1,13 @@
 import { useMemo, useState } from 'react'
 import type { HandRecord } from '../store/gameController'
-import type { AiStyleId, TournamentState } from '../core/types'
+import type { TournamentState } from '../core/types'
 import { buildView } from '../store/viewModel'
 import { analyzeTournament } from '../analysis/postmortem'
 import { PostmortemView } from './PostmortemView'
 import { rangesAtCursor } from '../store/replayEngine'
+import { OpponentModel } from '../store/opponentModel'
+import { exportHandHistory } from '../store/handHistoryExport'
+import type { Prefs } from '../store/storage'
 import { aggregateToClasses } from '../analysis/range'
 import { className } from '../core/handClass'
 import { STYLES } from '../ai/styles'
@@ -13,26 +16,46 @@ import { RangeMatrix } from './RangeMatrix'
 
 const STREET_ZH: Record<string, string> = { preflop: '翻前', flop: '翻牌', turn: '转牌', river: '河牌', showdown: '摊牌', done: '结束' }
 
-export function Replay({ ts, history, humanSeat, onBack }: { ts: TournamentState; history: HandRecord[]; humanSeat: number; onBack: () => void }) {
+export function Replay({
+  ts,
+  history,
+  humanSeat,
+  prefs,
+  onPrefs,
+  onBack,
+}: {
+  ts: TournamentState
+  history: HandRecord[]
+  humanSeat: number
+  prefs: Prefs
+  onPrefs: (p: Prefs) => void
+  onBack: () => void
+}) {
   const [handIdx, setHandIdx] = useState(history.length - 1)
   const [cursor, setCursor] = useState(9999)
   const [godView, setGodView] = useState(false)
   const [showRange, setShowRange] = useState(true)
   const [selOpp, setSelOpp] = useState(-1)
   const [pmOpen, setPmOpen] = useState(false)
-  const postmortem = useMemo(() => (pmOpen ? analyzeTournament(history, ts.players, humanSeat, ts.config.payouts) : null), [pmOpen, history, ts, humanSeat])
+  const [copied, setCopied] = useState<string | null>(null)
+  const postmortem = useMemo(
+    () => (pmOpen ? analyzeTournament(history, ts.players, humanSeat, ts.config.payouts) : null),
+    [pmOpen, history, ts, humanSeat],
+  )
 
   const rec = history[handIdx] ?? null
   const events = rec?.events ?? []
   const view = useMemo(() => buildView(events, cursor), [events, cursor])
 
-  const styleBySeat = useMemo(() => {
-    const m = new Map<number, AiStyleId | 'human'>()
-    for (const p of ts.players) m.set(p.seat, p.style)
+  // 诚实模式：只用该手之前的历史统计建模（与当时实际能观察到的信息一致）
+  const model = useMemo(() => {
+    const m = new OpponentModel(ts.players)
+    for (let i = 0; i < handIdx; i++) m.observeHand(history[i].events)
     return m
-  }, [ts])
+  }, [ts, history, handIdx])
+  const styleFor = useMemo(() => (prefs.honest ? (seat: number) => model.honestStyleFor(seat) : (seat: number) => model.styleFor(seat)), [prefs.honest, model])
 
-  const ranges = useMemo(() => (rec && showRange ? rangesAtCursor(events, cursor, styleBySeat) : null), [rec, events, cursor, styleBySeat, showRange])
+  const ranges = useMemo(() => (rec && showRange ? rangesAtCursor(events, cursor, styleFor) : null), [rec, events, cursor, styleFor, showRange])
 
   const activeOpps = useMemo(() => {
     if (!ranges) return []
@@ -74,6 +97,31 @@ export function Replay({ ts, history, humanSeat, onBack }: { ts: TournamentState
     return `当时你的胜率 ${(snap.equity * 100).toFixed(1)}%${snap.exact ? '（精确）' : ''}`
   }, [rec, view.street])
 
+  const onExport = async () => {
+    const text = exportHandHistory(history, ts, humanSeat, { godView })
+    const name = `poker-hh-${ts.config.seed}${godView ? '-godview' : ''}.txt`
+    try {
+      const blob = new Blob([text], { type: 'text/plain;charset=utf-8' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = name
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      setTimeout(() => URL.revokeObjectURL(url), 2000)
+      setCopied(`已导出 ${name}`)
+    } catch {
+      try {
+        await navigator.clipboard.writeText(text)
+        setCopied('浏览器不允许下载，已复制到剪贴板')
+      } catch {
+        setCopied('导出失败')
+      }
+    }
+    setTimeout(() => setCopied(null), 2500)
+  }
+
   if (!rec) {
     return (
       <div className="replay-screen">
@@ -106,11 +154,15 @@ export function Replay({ ts, history, humanSeat, onBack }: { ts: TournamentState
           <button className={`btn btn-top${pmOpen ? ' active' : ''}`} onClick={() => setPmOpen(!pmOpen)}>
             📋 赛后分析
           </button>
+          <button className="btn btn-top" title={godView ? '导出全部底牌（上帝视角）的手牌历史' : '导出标准手牌历史（仅你的底牌与摊牌亮出的牌）'} onClick={onExport}>
+            ⬇<span className="sm-hide"> 导出手牌历史</span>
+          </button>
           <button className="btn btn-top" onClick={onBack}>
             返回
           </button>
         </div>
       </div>
+      {copied ? <div className="toast">{copied}</div> : null}
       {pmOpen && postmortem ? (
         <div className="modal-mask" onClick={() => setPmOpen(false)}>
           <div className="modal" onClick={(e) => e.stopPropagation()}>
@@ -183,6 +235,14 @@ export function Replay({ ts, history, humanSeat, onBack }: { ts: TournamentState
           <div className="hud">
             <div className="hud-tabs">
               <span className="hud-static-title">范围推断（随回放实时重算）</span>
+              <div className="mode-toggle" title="上帝视角借用 AI 的真实策略反推；诚实模式只用该手之前可观察到的行为统计">
+                <button className={!prefs.honest ? 'active' : ''} onClick={() => onPrefs({ ...prefs, honest: false })}>
+                  上帝
+                </button>
+                <button className={prefs.honest ? 'active' : ''} onClick={() => onPrefs({ ...prefs, honest: true })}>
+                  诚实
+                </button>
+              </div>
             </div>
             <div className="hud-body">
               {opp && agg ? (
@@ -199,6 +259,7 @@ export function Replay({ ts, history, humanSeat, onBack }: { ts: TournamentState
                     intensity={agg.intensity}
                     tooltip={(cls) => `${className(cls)}：权重 ${(agg.weightSum[cls] * 100).toFixed(1)}%（可用组合 ${agg.availCount[cls]}）`}
                   />
+                  <div className="hud-note">{prefs.honest ? '诚实模式：按该手之前的公开统计（以紧凶为先验）推断' : '上帝视角：按该 AI 的真实策略函数推断'}</div>
                 </>
               ) : (
                 <div className="hud-empty">无活跃对手</div>

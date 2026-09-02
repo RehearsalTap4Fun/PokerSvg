@@ -1,19 +1,15 @@
 import { applyAction, setupHand } from '../core/hand'
-import type { AiStyleId, HandState } from '../core/types'
+import type { HandState } from '../core/types'
 import type { HandEvent } from '../core/events'
 import { initialRange, observeAction, observeBoard, type ObservedAction } from '../analysis/inference'
 import type { Range } from '../analysis/range'
 import { situationFor } from '../ai/decide'
-import { styleOf } from '../ai/styles'
+import type { AiStyle } from '../ai/styles'
 
 // 复盘时重建任意事件游标处的范围推断：
 // inference 是事件流的确定性纯函数——用 handStart 里的 seed 重建整副牌，逐 action 重放并观察。
 
-export function rangesAtCursor(
-  events: readonly HandEvent[],
-  upTo: number,
-  styleBySeat: ReadonlyMap<number, AiStyleId | 'human'>,
-): Map<number, Range> {
+export function rangesAtCursor(events: readonly HandEvent[], upTo: number, styleFor: (seat: number) => AiStyle): Map<number, Range> {
   const start = events[0]
   if (!start || start.t !== 'handStart') return new Map()
   let state: HandState = setupHand({
@@ -41,7 +37,7 @@ export function rangesAtCursor(
       e.action.type === 'check' ? 'check' : e.action.type === 'call' ? 'call' : e.action.type === 'fold' ? null : 'raise'
     if (obs) {
       const range = ranges.get(e.seat)
-      if (range) observeAction(range, styleOf(styleBySeat.get(e.seat) ?? 'tag'), sit, obs, boardBefore)
+      if (range) observeAction(range, styleFor(e.seat), sit, obs, boardBefore)
     }
     for (const ev of r.events) {
       if (ev.t === 'street') for (const range of ranges.values()) observeBoard(range, ev.cards)
