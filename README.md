@@ -2,7 +2,19 @@
 
 9 人单桌 Sit & Go 德州扑克锦标赛：你 + 8 个风格化 AI，完整真实比赛规则，内置实时分析辅助工具（胜率、对手范围推断、底池赔率/EV、ICM、行为统计 HUD、翻前范围表、逐街复盘与赛后分析）。
 
-纯前端单机，无服务器；`npm run release` 产出单文件 HTML，双击即玩。桌面与手机竖屏均已适配（≤760px 时 HUD 变为底部抽屉 + 悬浮胜率按钮，行动条为全宽大按钮）。
+纯前端单机，无服务器；`npm run release` 产出单文件 HTML，双击即玩。线上版可"添加到主屏幕"全屏打开、离线可玩。
+
+## 移动端
+
+布局由 `ui/layout.ts` 判定并写到 `<html data-layout>`，CSS 与组件读同一个来源：
+
+| 布局 | 条件 | 形态 |
+|---|---|---|
+| 桌面 | 其余情况 | 原样：宽桌 + 右侧常驻辅助面板 |
+| 竖屏 | 竖放且宽 ≤ 1024px（手机、竖放平板） | 高椭圆牌桌，座位按开局人数均匀排布；行动条一排大按钮，加注两步（额度面板 → 确认）；顶栏只留加速与菜单 |
+| 横屏 | 横放且高 ≤ 520px（横放手机） | 宽桌在左，点评与竖排行动按钮在右侧拇指区 |
+
+触屏布局下，牌桌上英雄旁只显示胜率小标签，点开是底部面板（拖把手切半屏 / 全屏、下拉关闭；横屏为右侧抽屉），四个辅助页签全部保留；设置、范围表、离开牌桌收进菜单面板。弹窗改为贴底面板，大厅主按钮贴底。
 
 ## 命令
 
@@ -13,7 +25,19 @@ npm test         # vitest 全量测试（引擎规则/评牌器/equity 基准/AI
 npm run build    # tsc 类型检查 + vite 单文件构建
 npm run release  # 构建并输出 release/德州扑克SNG.html（file:// 双击可玩）
 npm run calibrate -- [style] [games]   # 测某风格 AI 的实测行为统计（调参 / 重校 ai/adapt.ts 的 REF）
+npm run build:web  # web 版 → dist-web/：同一个单文件页面 + manifest / 图标 / service worker
+npm run icons    # 由 public/icons/icon.svg 重新渲染 PWA 图标（依赖本机 Chrome）
+npm run deploy   # 测试 → build:web → rsync dist-web/ 到服务器（线上：https://47.109.97.108/poker/）
 ```
+
+## 部署
+
+与饮食日记、叠叠中国、同路同机（阿里云轻量服务器，nginx 根目录 `/var/www`，每个项目一个子目录）。
+
+- 目标写在根目录 `.deploy.env`（已 gitignore）：沿用 `nutri/.deploy.env` 的 SSH 目标，`POKER_PATH=/var/www/poker`、`POKER_URL=https://47.109.97.108/poker`
+- nginx 规则见 `scripts/nginx-poker.inc`（已粘进服务器 `/etc/nginx/conf.d/nutri-site.inc`）：`index.html`、`sw.js`、`version.json` 设为 `no-cache`，发版后刷新即是新版本；manifest 指定 `application/manifest+json`
+- PWA：service worker 安装时预缓存全部产物（不到 1MB），页面导航网络优先、断网回退缓存；单文件版（`release/`）不注入任何安装标签，保持零外部引用
+- 存档在浏览器 localStorage（键 `poker-save-v1` / `poker-prefs-v1`），换设备不互通；与同域名下其他项目键名不冲突
 
 ## 玩法
 
@@ -34,6 +58,7 @@ npm run calibrate -- [style] [games]   # 测某风格 AI 的实测行为统计�
 | ICM | 跟注可能被淘汰时，额外给出奖金口径（Malmuth-Harville）的所需胜率；筹码可跟、ICM 不可跟时明确提示 |
 | 数据 | 全桌实时行为统计（VPIP / PFR / 3bet / AF / c-bet / 面对下注弃牌率 / WTSD），以及"AI 眼中的你"画像 |
 | 翻前范围表 | 按位置的开牌 / 面对开牌（跟注·3bet）频率表——就是紧凶 AI 实际使用的策略表，当前手牌高亮 |
+| 观察员 | 每次出手后以职业牌手观战口吻点评一句（桌面顶栏 🎙️ / 手机菜单里开关）：借用棋类注解 !! 妙手 / ! 好棋 / !? 趣着 / 本手 / ?! 疑问手 / ? 恶手 / ?? 败着。依据紧凶基准频率、对推断范围的胜率 vs 赔率、ICM、牌力 × 纹理、尺度、对手风格；只用当时可知的信息，不做结果论。点评随手牌存档，复盘时按游标显示 |
 | 复盘 | 每手事件溯源记录，逐街回放 + 上帝视角 + 当时胜率快照 + 范围推断随游标重算（可切诚实模式）；一键导出 PokerStars 风格手牌历史（.txt，可选含全部底牌） |
 | 赛后分析 | 比赛结束自动生成（固定规则、确定性）：统计 + 红蓝线（累计盈亏拆成摊牌/非摊牌）+ 跟注/弃牌决策 EV 损失 + 翻前相对基准的松/紧偏离 + 负赔率跟注 / ICM 泡沫期漏洞 / 错失价值 / 短码漏推 / 诈唬与被诈唬 / bad beat 等诊断 |
 

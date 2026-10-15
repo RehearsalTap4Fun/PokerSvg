@@ -6,6 +6,7 @@ import type { Action, HandState, LegalActions, TournamentConfig, TournamentState
 import type { HandEvent } from '../core/events'
 import { initialRange, observeAction, observeBoard, type ObservedAction } from '../analysis/inference'
 import type { Range } from '../analysis/range'
+import type { HandComment } from '../analysis/commentary'
 import { decideAi, situationFor } from '../ai/decide'
 import { OpponentModel } from './opponentModel'
 
@@ -17,6 +18,8 @@ export interface HandRecord {
   events: HandEvent[]
   /** 每街开始时英雄胜率快照（HUD 算出后回填；无 UI 时为空） */
   equitySnapshots: { street: string; equity: number; exact: boolean }[]
+  /** 观察员对英雄每次行动的点评（UI 生成后回填；旧存档无此字段） */
+  comments?: HandComment[]
   heroDelta: number
   wentToShowdown: boolean
 }

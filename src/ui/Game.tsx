@@ -14,12 +14,17 @@ import { analyzeTournament } from '../analysis/postmortem'
 import { ratesOf } from '../analysis/playerStats'
 import { describeProfile } from '../ai/adapt'
 import { icmRequiredEquity } from '../analysis/icm'
+import { commentOnAction, type HandComment } from '../analysis/commentary'
 import type { HudStatRow } from './Hud'
+import { CommentaryBar } from './CommentaryBar'
 import { Table } from './Table'
 import { ActionBar } from './ActionBar'
 import { Hud } from './Hud'
 import { PreflopChartModal } from './PreflopChartModal'
 import { ResultModal } from './ResultModal'
+import { Sheet, SheetRow } from './Sheet'
+import { useLayout } from './layout'
+import { IconChart, IconExit, IconFast, IconGrid, IconMic, IconMore, IconMute, IconSound } from './icons'
 
 // 牌局主界面：按节奏播放事件流（cursor 追赶 gc.handEvents），
 // 追上后轮到 AI 则延迟决策、轮到人类则显示行动条。
@@ -66,8 +71,19 @@ export function Game({
   const [cursor, setCursor] = useState(0)
   const [, setTickCount] = useState(0)
   const [speed, setSpeed] = useState(1)
-  // HUD：桌面默认展开；窄屏（手机）默认收起为底部抽屉
+  const layout = useLayout()
+  const compact = layout !== 'desktop'
+  // 桌面：右侧常驻面板（窄窗口默认收起）；触屏布局：牌桌上的胜率标签 → 底部面板
   const [hudOn, setHudOn] = useState(() => (typeof window === 'undefined' ? true : window.innerWidth > 760))
+  const [toolsOpen, setToolsOpen] = useState(false)
+  const [menuOpen, setMenuOpen] = useState(false)
+  // 平板旋转等导致布局切换时，按新布局重置辅助面板的默认状态
+  useEffect(() => {
+    if (compact) return
+    setToolsOpen(false)
+    setMenuOpen(false)
+    setHudOn(window.innerWidth > 760)
+  }, [compact])
   const [styleTags, setStyleTags] = useState(true)
   const [chartOpen, setChartOpen] = useState(false)
   const [equity, setEquity] = useState<EquityUpdate | null>(null)
@@ -81,6 +97,8 @@ export function Game({
   const persistedHandRef = useRef(0)
   const snapshotsRef = useRef<{ handNo: number; list: { street: string; equity: number; exact: boolean }[] }>({ handNo: 0, list: [] })
   const lastSnapStreetRef = useRef('')
+  const commentsRef = useRef<{ handNo: number; list: HandComment[] }>({ handNo: 0, list: [] })
+  const [commentFeed, setCommentFeed] = useState<HandComment[]>([])
 
   const bump = useCallback(() => setTickCount((t) => t + 1), [])
 
@@ -111,6 +129,8 @@ export function Game({
     persistedHandRef.current = hand.handNo
     const rec = gc.history.find((h) => h.handNo === snapshotsRef.current.handNo)
     if (rec) rec.equitySnapshots = snapshotsRef.current.list
+    const crec = gc.history.find((h) => h.handNo === hand.handNo)
+    if (crec && commentsRef.current.handNo === hand.handNo) crec.comments = commentsRef.current.list.slice()
     const next: SaveData = { ...save }
     if (gc.finished) {
       const me = gc.ts.players.find((p) => p.seat === gc.humanSeat)
@@ -227,14 +247,32 @@ export function Game({
   const onHumanAction = useCallback(
     (a: Action) => {
       if (!gc.isHumanTurn()) return
+      // 点评必须在 act 之前生成：act 会推进牌局并原地更新范围推断
+      const h = gc.hand!
+      const comment = commentOnAction({
+        state: h,
+        seat: gc.humanSeat,
+        action: a,
+        ranges: displayRanges,
+        payouts: gc.ts.config.payouts,
+        eventIdx: gc.handEvents.length,
+        styleFor: (s) => (prefs.honest ? gc.model.honestStyleFor(s) : gc.model.styleFor(s)),
+        nameOf: (s) => gc.ts.players.find((p) => p.seat === s)?.name ?? `座位 ${s}`,
+      })
       try {
         gc.act(a)
-        bump()
       } catch (err) {
         console.warn('非法动作', err)
+        return
       }
+      if (comment) {
+        if (commentsRef.current.handNo !== h.handNo) commentsRef.current = { handNo: h.handNo, list: [] }
+        commentsRef.current.list.push(comment)
+        setCommentFeed((f) => [...f.slice(-29), comment])
+      }
+      bump()
     },
-    [gc, bump],
+    [gc, bump, displayRanges, prefs.honest],
   )
 
   const onExitClick = useCallback(() => {
@@ -297,8 +335,63 @@ export function Game({
     [resultOpen, gc],
   )
 
+  const toggleSound = () => {
+    const next = !soundOn
+    soundRef.current?.setEnabled(next)
+    setSoundOn(next)
+    if (next) soundRef.current?.play('chip')
+  }
+  const aliveCount = gc.ts.players.filter((p) => p.rank === null).length
+  const handText = `第 ${view.handNo || gc.ts.handNo + 1} 手`
+  const levelUpText = untilUp !== null ? `${untilUp} 手后升盲` : '最高级别'
+
+  const hud = (
+    <Hud
+      equity={heroAlive ? equity : null}
+      heroCards={heroCards}
+      board={gc.hand?.board ?? []}
+      pot={pot}
+      toCall={toCall}
+      isHumanTurn={humanTurn}
+      opponents={hudOpponents}
+      stats={statRows}
+      humanSeat={gc.humanSeat}
+      heroProfile={heroProfile}
+      icmNeeded={icmNeeded}
+      heroStack={hero?.stack ?? 0}
+      honest={prefs.honest}
+      onToggleHonest={(h) => onPrefs({ ...prefs, honest: h })}
+      onOpenChart={() => setChartOpen(true)}
+    />
+  )
+
+  const equityChip = compact ? (
+    <button className={`equity-chip${heroAlive && equity ? '' : ' idle'}`} aria-label="打开辅助分析" onClick={() => setToolsOpen(true)}>
+      <IconChart />
+      <span>{heroAlive && equity ? `${(equity.equity * 100).toFixed(0)}%` : '辅助'}</span>
+    </button>
+  ) : undefined
+
   return (
     <div className="game-screen">
+      {compact ? (
+        <div className="top-bar top-bar-compact">
+          <div className="tb-info">
+            <span className="top-title">
+              {level.sb}/{level.bb}
+              {level.ante > 0 ? <span className="tb-ante"> ante {level.ante}</span> : null}
+            </span>
+            <span className="top-dim">{spectating ? `你已获第 ${me?.rank} 名 · 观战中` : `${aliveCount} 人 · ${handText} · ${levelUpText}`}</span>
+          </div>
+          <button className={`icon-btn${speed > 1 ? ' active' : ''}`} aria-pressed={speed > 1} onClick={() => setSpeed(speed > 1 ? 1 : 3)}>
+            <IconFast />
+            <span>{speed > 1 ? '加速中' : '加速'}</span>
+          </button>
+          <button className="icon-btn" aria-label="菜单" aria-haspopup="dialog" onClick={() => setMenuOpen(true)}>
+            <IconMore />
+          </button>
+        </div>
+      ) : (
       <div className="top-bar">
         <div className="top-left">
           <span className="top-title">
@@ -318,19 +411,17 @@ export function Game({
           <button className={`btn btn-top${styleTags ? ' active' : ''}`} onClick={() => setStyleTags(!styleTags)}>
             🏷️<span className="sm-hide"> 风格标签</span>
           </button>
-          <button className={`btn btn-top sm-none${hudOn ? ' active' : ''}`} onClick={() => setHudOn(!hudOn)}>
+          <button
+            className={`btn btn-top${prefs.commentator ? ' active' : ''}`}
+            title="观察员点评：每次出手后，以职业牌手观战的视角给出评价"
+            onClick={() => onPrefs({ ...prefs, commentator: !prefs.commentator })}
+          >
+            🎙️<span className="sm-hide"> 观察员</span>
+          </button>
+          <button className={`btn btn-top${hudOn ? ' active' : ''}`} onClick={() => setHudOn(!hudOn)}>
             {hudOn ? '隐藏辅助' : '显示辅助'}
           </button>
-          <button
-            className={`btn btn-top${soundOn ? ' active' : ''}`}
-            title="音效开关"
-            onClick={() => {
-              const next = !soundOn
-              soundRef.current?.setEnabled(next)
-              setSoundOn(next)
-              if (next) soundRef.current?.play('chip')
-            }}
-          >
+          <button className={`btn btn-top${soundOn ? ' active' : ''}`} title="音效开关" onClick={toggleSound}>
             {soundOn ? '🔊' : '🔇'}
           </button>
           <button className="btn btn-top" onClick={onExitClick}>
@@ -338,6 +429,7 @@ export function Game({
           </button>
         </div>
       </div>
+      )}
       <div className="game-main">
         <div className="table-col">
           <Table
@@ -349,10 +441,12 @@ export function Game({
             showStyleTags={styleTags}
             levelText={`盲注 ${level.sb}/${level.bb}${level.ante > 0 ? ` · ante ${level.ante}` : ''}`}
             subText={`奖池 ${gc.ts.config.payouts.reduce((a, b) => a + b, 0)} · 冠军 ${gc.ts.config.payouts[0]}`}
+            heroAddon={equityChip}
           />
+          {prefs.commentator ? <CommentaryBar items={commentFeed} emptyText="观察员已就位，等你出手。" /> : null}
           <div className="action-area">
             {humanTurn && !done ? (
-              <ActionBar legal={gc.humanLegal()} pot={pot} bb={level.bb} heroStack={hero?.stack ?? 0} onAction={onHumanAction} />
+              <ActionBar legal={gc.humanLegal()} pot={pot} bb={level.bb} heroStack={hero?.stack ?? 0} onAction={onHumanAction} compact={compact} />
             ) : (
               <div className="action-placeholder">
                 {done ? (view.done ? '本手结束' : '结算中…') : caughtUp ? (spectating ? '' : '等待对手行动…') : ''}
@@ -360,29 +454,36 @@ export function Game({
             )}
           </div>
         </div>
-        {hudOn ? (
-          <Hud
-            equity={heroAlive ? equity : null}
-            heroCards={heroCards}
-            board={gc.hand?.board ?? []}
-            pot={pot}
-            toCall={toCall}
-            isHumanTurn={humanTurn}
-            opponents={hudOpponents}
-            stats={statRows}
-            humanSeat={gc.humanSeat}
-            heroProfile={heroProfile}
-            icmNeeded={icmNeeded}
-            heroStack={hero?.stack ?? 0}
-            honest={prefs.honest}
-            onToggleHonest={(h) => onPrefs({ ...prefs, honest: h })}
-            onOpenChart={() => setChartOpen(true)}
-          />
-        ) : null}
+        {!compact && hudOn ? hud : null}
       </div>
-      <button className={`equity-fab${hudOn ? ' fab-open' : ''}`} onClick={() => setHudOn(!hudOn)}>
-        {hudOn ? '✕ 收起' : heroAlive && equity ? `📊 ${(equity.equity * 100).toFixed(0)}%` : '📊 辅助'}
-      </button>
+      {compact ? (
+        <>
+          <Sheet open={toolsOpen} onClose={() => setToolsOpen(false)} title="辅助分析" tall>
+            {hud}
+          </Sheet>
+          <Sheet open={menuOpen} onClose={() => setMenuOpen(false)} title="牌桌设置">
+            <SheetRow icon={<IconFast />} label="加速播放" hint="对手行动与发牌快三倍" on={speed > 1} onClick={() => setSpeed(speed > 1 ? 1 : 3)} />
+            <SheetRow
+              icon={<IconMic />}
+              label="观察员点评"
+              hint="每次出手后，职业牌手视角的评价"
+              on={prefs.commentator}
+              onClick={() => onPrefs({ ...prefs, commentator: !prefs.commentator })}
+            />
+            <SheetRow icon={soundOn ? <IconSound /> : <IconMute />} label="音效" on={soundOn} onClick={toggleSound} />
+            <SheetRow
+              icon={<IconGrid />}
+              label="翻前范围表"
+              hint="紧凶基准的开牌与防守范围"
+              onClick={() => {
+                setMenuOpen(false)
+                setChartOpen(true)
+              }}
+            />
+            <SheetRow icon={<IconExit />} label="离开牌桌" hint="进度自动保存，可从大厅继续" danger onClick={onExitClick} />
+          </Sheet>
+        </>
+      ) : null}
       {chartOpen ? <PreflopChartModal heroClass={heroClass} currentPos={heroPos} onClose={() => setChartOpen(false)} /> : null}
       {resultOpen ? <ResultModal players={gc.ts.players} humanSeat={gc.humanSeat} postmortem={postmortem} onClose={onExitClick} /> : null}
     </div>

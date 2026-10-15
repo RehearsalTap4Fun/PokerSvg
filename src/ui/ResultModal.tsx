@@ -1,6 +1,6 @@
 import type { TournamentPlayer } from '../core/types'
 import type { Postmortem } from '../analysis/postmortem'
-import { STYLES } from '../ai/styles'
+import { AvatarChip } from './Avatar'
 import { PostmortemView } from './PostmortemView'
 
 export function ResultModal({
@@ -37,7 +37,7 @@ export function ResultModal({
               <tr key={p.seat} className={p.seat === humanSeat ? 'me' : ''}>
                 <td>{p.rank}</td>
                 <td>
-                  {p.style !== 'human' ? `${STYLES[p.style].emoji} ` : ''}
+                  <AvatarChip playerId={p.id} style={p.style} />
                   {p.name}
                   {p.seat === humanSeat ? '（你）' : ''}
                 </td>

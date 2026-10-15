@@ -1,0 +1,17 @@
+{
+  "name": "德州扑克 SNG 锦标赛",
+  "short_name": "德州SNG",
+  "description": "单机德州扑克 SNG：传奇 AI 对手、实时胜率与对手范围推断、观察员点评与赛后复盘",
+  "lang": "zh-CN",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#F5F1E4",
+  "theme_color": "#ffffff",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

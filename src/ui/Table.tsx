@@ -1,9 +1,11 @@
+import { useMemo } from 'react'
 import type { TableView } from '../store/viewModel'
 import type { TournamentPlayer } from '../core/types'
 import { fmtChips } from '../core/format'
 import type React from 'react'
 import { CardView } from './CardView'
-import { Seat, SEAT_POS } from './Seat'
+import { Seat, seatPositions } from './Seat'
+import { useLayout } from './layout'
 
 export interface TableProps {
   view: TableView
@@ -16,9 +18,23 @@ export interface TableProps {
   showStyleTags: boolean
   levelText: string
   subText?: string
+  /** 挂在英雄座位旁的小控件（移动端的胜率标签） */
+  heroAddon?: React.ReactNode
 }
 
-export function Table({ view, players, humanSeat, turnSeat, revealAll, showStyleTags, levelText, subText }: TableProps) {
+export function Table({ view, players, humanSeat, turnSeat, revealAll, showStyleTags, levelText, subText, heroAddon }: TableProps) {
+  const layout = useLayout()
+  const positions = useMemo(
+    () =>
+      seatPositions(
+        layout,
+        players.map((p) => p.seat),
+        humanSeat,
+      ),
+    [layout, players, humanSeat],
+  )
+  const posOf = (seat: number) => positions.get(seat) ?? { x: 50, y: 50 }
+  const heroPos = positions.get(humanSeat)
   return (
     <div className="table-wrap">
       <div className="table-felt">
@@ -40,7 +56,7 @@ export function Table({ view, players, humanSeat, turnSeat, revealAll, showStyle
         {view.lastEvent?.t === 'potAward'
           ? (() => {
               const e = view.lastEvent
-              const target = SEAT_POS[(e.seat - humanSeat + 9) % 9]
+              const target = posOf(e.seat)
               return (
                 <div
                   key={`fly-${e.seat}-${e.amount}-${view.pot}`}
@@ -55,16 +71,17 @@ export function Table({ view, players, humanSeat, turnSeat, revealAll, showStyle
         {view.seats.map((s) => {
           if (!s) return null
           const p = players.find((x) => x.seat === s.seat)
-          const displayPos = (s.seat - humanSeat + 9) % 9
           const isHero = s.seat === humanSeat
           const justWon = view.lastEvent?.t === 'potAward' && view.lastEvent.seat === s.seat
           return (
             <Seat
               key={s.seat}
               view={s}
+              playerId={p?.id ?? s.playerId}
               name={p?.name ?? s.playerId}
               style={p?.style ?? 'tag'}
-              displayPos={displayPos}
+              pos={posOf(s.seat)}
+              layout={layout}
               isButton={view.buttonSeat === s.seat}
               isTurn={turnSeat === s.seat}
               isHero={isHero}
@@ -75,6 +92,11 @@ export function Table({ view, players, humanSeat, turnSeat, revealAll, showStyle
             />
           )
         })}
+        {heroAddon && heroPos ? (
+          <div className="hero-addon" style={{ left: `${heroPos.x}%`, top: `${heroPos.y}%` }}>
+            {heroAddon}
+          </div>
+        ) : null}
       </div>
     </div>
   )

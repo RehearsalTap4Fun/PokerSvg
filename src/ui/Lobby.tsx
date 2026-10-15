@@ -1,6 +1,7 @@
 import type { Prefs, SaveData } from '../store/storage'
 import { rosterFor } from '../data/aiNames'
 import { STYLES } from '../ai/styles'
+import { AvatarChip } from './Avatar'
 import { BUY_IN, STRUCTURES, TABLE_SIZES, payoutsFor, type StructureKind, type TableSize } from '../data/blindSchedule'
 
 export interface LobbyProps {
@@ -102,8 +103,9 @@ export function Lobby({ save, prefs, onPrefs, onStart, onResume, onAbandon, onRe
               const stl = STYLES[a.style]
               return (
                 <div key={a.id} className="roster-item" title={stl.desc}>
+                  <AvatarChip playerId={a.id} style={a.style} />
                   <span className="roster-name">
-                    {stl.emoji} {a.name}
+                    {a.name}
                     <span className="top-dim">（{stl.name}）</span>
                   </span>
                   <span className="roster-desc">{stl.desc}</span>

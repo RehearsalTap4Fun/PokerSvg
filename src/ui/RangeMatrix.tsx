@@ -29,6 +29,7 @@ export function RangeMatrix({ intensity, highlightClass = -1, tooltip, hue = 16 
           style={bg ? { background: bg } : undefined}
           onMouseEnter={() => setHover(cls)}
           onMouseLeave={() => setHover(-1)}
+          onClick={() => setHover(cls)}
         >
           {className(cls)}
         </div>,

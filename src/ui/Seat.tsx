@@ -4,9 +4,13 @@ import { HUMAN_COLOR, STYLES } from '../ai/styles'
 import type { AiStyleId } from '../core/types'
 import { fmtChips } from '../core/format'
 import { CardView } from './CardView'
+import { Avatar } from './Avatar'
+import type { Layout } from './layout'
+
+export type XY = { x: number; y: number }
 
 // 座位定位：display 位置 0 = 屏幕正下方（人类），顺时针排布
-export const SEAT_POS: { x: number; y: number }[] = [
+export const SEAT_POS: XY[] = [
   { x: 50, y: 90 },
   { x: 21, y: 84 },
   { x: 4, y: 55 },
@@ -18,11 +22,80 @@ export const SEAT_POS: { x: number; y: number }[] = [
   { x: 80, y: 80 },
 ]
 
+// 横屏手机：桌面同款宽椭圆，但上下收进来，座位不出桌沿
+const SEAT_POS_LANDSCAPE: XY[] = [
+  { x: 50, y: 83 },
+  { x: 23, y: 80 },
+  { x: 7, y: 52 },
+  { x: 13, y: 20 },
+  { x: 35, y: 13 },
+  { x: 65, y: 13 },
+  { x: 87, y: 20 },
+  { x: 93, y: 52 },
+  { x: 77, y: 80 },
+]
+
+// 竖屏：按开局人数沿高椭圆均匀排布（下标 = 从英雄起顺时针的次序）
+const SEAT_POS_PORTRAIT: Record<number, XY[]> = {
+  9: [
+    { x: 50, y: 86 },
+    { x: 11, y: 73 },
+    { x: 10, y: 52 },
+    { x: 11, y: 30 },
+    { x: 31, y: 10 },
+    { x: 69, y: 10 },
+    { x: 89, y: 30 },
+    { x: 90, y: 52 },
+    { x: 89, y: 73 },
+  ],
+  6: [
+    { x: 50, y: 86 },
+    { x: 11, y: 64 },
+    { x: 13, y: 26 },
+    { x: 50, y: 9 },
+    { x: 87, y: 26 },
+    { x: 89, y: 64 },
+  ],
+  2: [
+    { x: 50, y: 86 },
+    { x: 50, y: 10 },
+  ],
+}
+
+/** 每个座位号在当前布局下的桌面坐标（百分比） */
+export function seatPositions(layout: Layout, seats: readonly number[], humanSeat: number): Map<number, XY> {
+  const out = new Map<number, XY>()
+  const disp = (s: number) => (s - humanSeat + 9) % 9
+  const portrait = layout === 'portrait' ? SEAT_POS_PORTRAIT[seats.length] : undefined
+  if (portrait) {
+    ;[...seats].sort((a, b) => disp(a) - disp(b)).forEach((s, i) => out.set(s, portrait[i]))
+    return out
+  }
+  const table = layout === 'landscape' ? SEAT_POS_LANDSCAPE : SEAT_POS
+  for (const s of seats) out.set(s, table[disp(s)])
+  return out
+}
+
+/** 下注筹码位置：座位向桌心偏移；竖屏两侧座位只做水平偏移，避开公共牌 */
+function betPos(pos: XY, layout: Layout): XY {
+  const heroSpot = pos.x > 40 && pos.x < 60 && pos.y > 75
+  if (layout === 'portrait') {
+    if (heroSpot) return { x: 50, y: pos.y - 17 }
+    if (pos.x < 22) return { x: pos.x + 17, y: pos.y }
+    if (pos.x > 78) return { x: pos.x - 17, y: pos.y }
+    return { x: pos.x + (50 - pos.x) * 0.3, y: pos.y + (45 - pos.y) * 0.3 }
+  }
+  if (layout === 'landscape' && heroSpot) return { x: 50, y: pos.y - 22 }
+  return { x: pos.x + (50 - pos.x) * 0.38, y: pos.y + (45 - pos.y) * 0.38 }
+}
+
 export interface SeatProps {
   view: SeatView
+  playerId: string
   name: string
   style: AiStyleId | 'human'
-  displayPos: number
+  pos: XY
+  layout: Layout
   isButton: boolean
   isTurn: boolean
   isHero: boolean
@@ -33,18 +106,16 @@ export interface SeatProps {
   justWon: boolean
 }
 
-export function Seat({ view, name, style, displayPos, isButton, isTurn, isHero, showCards, showStyleTag, rank, justWon }: SeatProps) {
-  const pos = SEAT_POS[displayPos]
+export function Seat({ view, playerId, name, style, pos, layout, isButton, isTurn, isHero, showCards, showStyleTag, rank, justWon }: SeatProps) {
+  const side = pos.x > 62 ? ' seat-right' : pos.x < 38 ? ' seat-left' : ''
   const st = style === 'human' ? null : STYLES[style]
   const color = st ? st.color : HUMAN_COLOR
   const faceUp = showCards || view.revealed
-  // 下注筹码位置：座位向桌心偏移
-  const betX = pos.x + (50 - pos.x) * 0.38
-  const betY = pos.y + (45 - pos.y) * 0.38
+  const { x: betX, y: betY } = betPos(pos, layout)
   return (
     <>
       <div
-        className={`seat${view.folded ? ' seat-folded' : ''}${isTurn ? ' seat-turn' : ''}${isHero ? ' seat-hero' : ''}${justWon ? ' seat-won' : ''}`}
+        className={`seat${side}${view.folded ? ' seat-folded' : ''}${isTurn ? ' seat-turn' : ''}${isHero ? ' seat-hero' : ''}${justWon ? ' seat-won' : ''}`}
         style={{ left: `${pos.x}%`, top: `${pos.y}%` }}
       >
         <div className="seat-cards">
@@ -57,7 +128,7 @@ export function Seat({ view, name, style, displayPos, isButton, isTurn, isHero, 
         </div>
         <div className="seat-plate" title={st ? `${st.name}：${st.desc}` : undefined}>
           <div className="seat-avatar" style={{ borderColor: color, background: `${color}24` }}>
-            {st ? st.emoji : '👤'}
+            <Avatar playerId={playerId} style={style} />
           </div>
           <div className="seat-meta">
             <div className="seat-name">

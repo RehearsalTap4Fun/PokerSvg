@@ -75,9 +75,11 @@ export interface Prefs {
   structure: 'standard' | 'turbo' | 'deep'
   /** 诚实推断：范围推断只用可观察统计，不用 AI 真实策略 */
   honest: boolean
+  /** 观察员点评：每次出手后给出职业牌手视角的评价 */
+  commentator: boolean
 }
 
-export const DEFAULT_PREFS: Prefs = { roster: 'legend', size: 9, structure: 'standard', honest: false }
+export const DEFAULT_PREFS: Prefs = { roster: 'legend', size: 9, structure: 'standard', honest: false, commentator: true }
 
 export function loadPrefs(): Prefs {
   try {
@@ -89,6 +91,7 @@ export function loadPrefs(): Prefs {
       size: p.size === 6 || p.size === 2 ? p.size : 9,
       structure: p.structure === 'turbo' || p.structure === 'deep' ? p.structure : 'standard',
       honest: !!p.honest,
+      commentator: p.commentator !== false,
     }
   } catch {
     return { ...DEFAULT_PREFS }

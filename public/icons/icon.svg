@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <!-- 与饮食日记、同路同一套手绘导览图语言：米色底、墨色岸线、平涂块面；蓝色牌桌上两张扇开的牌 -->
+  <rect width="512" height="512" fill="#F5F1E4"/>
+  <path d="M86 136C124 72 218 52 304 70C394 88 462 158 450 258C440 356 378 440 272 452C166 464 82 402 64 314C50 248 56 182 86 136Z" fill="#8AB6EA" stroke="#2C2E2A" stroke-width="10" stroke-linejoin="round"/>
+  <g transform="rotate(-14 214 290)">
+    <rect x="140" y="184" width="148" height="212" rx="18" fill="#FFFFFF" stroke="#2C2E2A" stroke-width="12" stroke-linejoin="round"/>
+    <path transform="translate(190 240) scale(1.4)" d="M0 14C-22 -2 -24 -18 -12 -24C-4 -28 0 -22 0 -17C0 -22 4 -28 12 -24C24 -18 22 -2 0 14Z" fill="#E0561B" stroke="#2C2E2A" stroke-width="5" stroke-linejoin="round"/>
+  </g>
+  <g transform="rotate(9 298 298)">
+    <rect x="224" y="192" width="148" height="212" rx="18" fill="#FFFFFF" stroke="#2C2E2A" stroke-width="12" stroke-linejoin="round"/>
+    <path transform="translate(298 300) scale(0.38) translate(-256 -257)" d="M256 112C230 160 132 214 132 290C132 336 168 366 208 366C228 366 242 358 250 348C246 372 236 390 212 402L300 402C276 390 266 372 262 348C270 358 284 366 304 366C344 366 380 336 380 290C380 214 282 160 256 112Z" fill="#2C2E2A"/>
+  </g>
+  <circle cx="396" cy="126" r="30" fill="#FFD23F" stroke="#2C2E2A" stroke-width="10"/>
+</svg>

@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import type { HandRecord } from '../store/gameController'
-import type { TournamentState } from '../core/types'
+import type { TournamentPlayer, TournamentState } from '../core/types'
 import { buildView } from '../store/viewModel'
 import { analyzeTournament } from '../analysis/postmortem'
 import { PostmortemView } from './PostmortemView'
@@ -10,9 +10,13 @@ import { exportHandHistory } from '../store/handHistoryExport'
 import type { Prefs } from '../store/storage'
 import { aggregateToClasses } from '../analysis/range'
 import { className } from '../core/handClass'
-import { STYLES } from '../ai/styles'
 import { Table } from './Table'
+import { AvatarChip } from './Avatar'
 import { RangeMatrix } from './RangeMatrix'
+import { CommentaryBar } from './CommentaryBar'
+import { Sheet, SheetRow } from './Sheet'
+import { useLayout } from './layout'
+import { IconBack, IconChart, IconDownload, IconEye, IconMore, IconReport } from './icons'
 
 const STREET_ZH: Record<string, string> = { preflop: '翻前', flop: '翻牌', turn: '转牌', river: '河牌', showdown: '摊牌', done: '结束' }
 
@@ -38,6 +42,10 @@ export function Replay({
   const [selOpp, setSelOpp] = useState(-1)
   const [pmOpen, setPmOpen] = useState(false)
   const [copied, setCopied] = useState<string | null>(null)
+  const compact = useLayout() !== 'desktop'
+  const [menuOpen, setMenuOpen] = useState(false)
+  const [rangeOpen, setRangeOpen] = useState(false)
+  const rangeActive = compact ? rangeOpen : showRange
   const postmortem = useMemo(
     () => (pmOpen ? analyzeTournament(history, ts.players, humanSeat, ts.config.payouts) : null),
     [pmOpen, history, ts, humanSeat],
@@ -55,16 +63,16 @@ export function Replay({
   }, [ts, history, handIdx])
   const styleFor = useMemo(() => (prefs.honest ? (seat: number) => model.honestStyleFor(seat) : (seat: number) => model.styleFor(seat)), [prefs.honest, model])
 
-  const ranges = useMemo(() => (rec && showRange ? rangesAtCursor(events, cursor, styleFor) : null), [rec, events, cursor, styleFor, showRange])
+  const ranges = useMemo(() => (rec && rangeActive ? rangesAtCursor(events, cursor, styleFor) : null), [rec, events, cursor, styleFor, rangeActive])
 
   const activeOpps = useMemo(() => {
     if (!ranges) return []
-    const out: { seat: number; name: string; emoji: string }[] = []
+    const out: { seat: number; name: string; player: TournamentPlayer | undefined }[] = []
     for (const [seat] of ranges) {
       const sv = view.seats[seat]
       if (!sv || sv.folded || seat === humanSeat) continue
       const p = ts.players.find((x) => x.seat === seat)
-      out.push({ seat, name: p?.name ?? `座位${seat}`, emoji: p && p.style !== 'human' ? STYLES[p.style].emoji : '' })
+      out.push({ seat, name: p?.name ?? `座位${seat}`, player: p })
     }
     return out
   }, [ranges, view, ts, humanSeat])
@@ -96,6 +104,8 @@ export function Replay({
     if (!snap) return null
     return `当时你的胜率 ${(snap.equity * 100).toFixed(1)}%${snap.exact ? '（精确）' : ''}`
   }, [rec, view.street])
+
+  const commentsAtCursor = useMemo(() => (rec?.comments ?? []).filter((c) => c.eventIdx < cursor), [rec, cursor])
 
   const onExport = async () => {
     const text = exportHandHistory(history, ts, humanSeat, { godView })
@@ -136,8 +146,59 @@ export function Replay({
     )
   }
 
+  const rangeHead = (
+    <div className="mode-toggle" title="上帝视角借用 AI 的真实策略反推；诚实模式只用该手之前可观察到的行为统计">
+      <button className={!prefs.honest ? 'active' : ''} onClick={() => onPrefs({ ...prefs, honest: false })}>
+        上帝
+      </button>
+      <button className={prefs.honest ? 'active' : ''} onClick={() => onPrefs({ ...prefs, honest: true })}>
+        诚实
+      </button>
+    </div>
+  )
+  const rangeBody = (
+    <div className="hud-body">
+      {opp && agg ? (
+        <>
+          <div className="opp-select">
+            {activeOpps.map((o) => (
+              <button key={o.seat} className={o.seat === opp.seat ? 'active' : ''} onClick={() => setSelOpp(o.seat)}>
+                {o.player ? <AvatarChip playerId={o.player.id} style={o.player.style} /> : null}
+                {o.name}
+              </button>
+            ))}
+          </div>
+          <RangeMatrix
+            intensity={agg.intensity}
+            tooltip={(cls) => `${className(cls)}：权重 ${(agg.weightSum[cls] * 100).toFixed(1)}%（可用组合 ${agg.availCount[cls]}）`}
+          />
+          <div className="hud-note">{prefs.honest ? '诚实模式：按该手之前的公开统计（以紧凶为先验）推断' : '上帝视角：按该 AI 的真实策略函数推断'}</div>
+        </>
+      ) : (
+        <div className="hud-empty">无活跃对手</div>
+      )}
+    </div>
+  )
+
   return (
     <div className="replay-screen">
+      {compact ? (
+        <div className="top-bar top-bar-compact">
+          <button className="icon-btn" aria-label="返回大厅" onClick={onBack}>
+            <IconBack />
+          </button>
+          <div className="tb-info">
+            <span className="top-title">复盘 · 第 {rec.handNo} 手</span>
+            <span className="top-dim">
+              {STREET_ZH[view.street] ?? ''}
+              {snapshotText ? ` · ${snapshotText}` : ''}
+            </span>
+          </div>
+          <button className="icon-btn" aria-label="菜单" aria-haspopup="dialog" onClick={() => setMenuOpen(true)}>
+            <IconMore />
+          </button>
+        </div>
+      ) : (
       <div className="top-bar">
         <div className="top-left">
           <span className="top-title">复盘 · 第 {rec.handNo} 手</span>
@@ -162,6 +223,7 @@ export function Replay({
           </button>
         </div>
       </div>
+      )}
       {copied ? <div className="toast">{copied}</div> : null}
       {pmOpen && postmortem ? (
         <div className="modal-mask" onClick={() => setPmOpen(false)}>
@@ -205,20 +267,33 @@ export function Replay({
             revealAll={godView}
             showStyleTags={true}
             levelText={`第 ${rec.handNo} 手 · 盲注 ${view.level.sb}/${view.level.bb}${view.level.ante > 0 ? ` · ante ${view.level.ante}` : ''}`}
+            heroAddon={
+              compact ? (
+                <button className="equity-chip idle" aria-label="打开范围推断" onClick={() => setRangeOpen(true)}>
+                  <IconChart />
+                  <span>范围</span>
+                </button>
+              ) : undefined
+            }
           />
+          {rec.comments && rec.comments.length > 0 ? (
+            <CommentaryBar items={commentsAtCursor} emptyText="回放到你的行动时，这里会显示观察员当时的点评。" />
+          ) : null}
           <div className="replay-controls">
-            <button className="btn" onClick={() => setCursor(0)}>
-              ⏮
-            </button>
-            <button className="btn" onClick={() => setCursor(Math.max(0, Math.min(cursor, events.length) - 1))}>
-              ◀ 上一步
-            </button>
-            <button className="btn" onClick={() => setCursor(Math.min(events.length, cursor + 1))}>
-              下一步 ▶
-            </button>
-            <button className="btn" onClick={() => setCursor(9999)}>
-              ⏭
-            </button>
+            <div className="replay-nav">
+              <button className="btn" aria-label="回到开头" onClick={() => setCursor(0)}>
+                ⏮
+              </button>
+              <button className="btn" onClick={() => setCursor(Math.max(0, Math.min(cursor, events.length) - 1))}>
+                ◀ 上一步
+              </button>
+              <button className="btn" onClick={() => setCursor(Math.min(events.length, cursor + 1))}>
+                下一步 ▶
+              </button>
+              <button className="btn" aria-label="跳到结尾" onClick={() => setCursor(9999)}>
+                ⏭
+              </button>
+            </div>
             <div className="street-jumps">
               {streetMarks.map((m) => (
                 <button key={m.label} className="btn btn-quick" onClick={() => setCursor(m.idx)}>
@@ -231,43 +306,56 @@ export function Replay({
             </span>
           </div>
         </div>
-        {showRange ? (
+        {!compact && showRange ? (
           <div className="hud">
             <div className="hud-tabs">
               <span className="hud-static-title">范围推断（随回放实时重算）</span>
-              <div className="mode-toggle" title="上帝视角借用 AI 的真实策略反推；诚实模式只用该手之前可观察到的行为统计">
-                <button className={!prefs.honest ? 'active' : ''} onClick={() => onPrefs({ ...prefs, honest: false })}>
-                  上帝
-                </button>
-                <button className={prefs.honest ? 'active' : ''} onClick={() => onPrefs({ ...prefs, honest: true })}>
-                  诚实
-                </button>
-              </div>
+              {rangeHead}
             </div>
-            <div className="hud-body">
-              {opp && agg ? (
-                <>
-                  <div className="opp-select">
-                    {activeOpps.map((o) => (
-                      <button key={o.seat} className={o.seat === opp.seat ? 'active' : ''} onClick={() => setSelOpp(o.seat)}>
-                        {o.emoji}
-                        {o.name}
-                      </button>
-                    ))}
-                  </div>
-                  <RangeMatrix
-                    intensity={agg.intensity}
-                    tooltip={(cls) => `${className(cls)}：权重 ${(agg.weightSum[cls] * 100).toFixed(1)}%（可用组合 ${agg.availCount[cls]}）`}
-                  />
-                  <div className="hud-note">{prefs.honest ? '诚实模式：按该手之前的公开统计（以紧凶为先验）推断' : '上帝视角：按该 AI 的真实策略函数推断'}</div>
-                </>
-              ) : (
-                <div className="hud-empty">无活跃对手</div>
-              )}
-            </div>
+            {rangeBody}
           </div>
         ) : null}
       </div>
+      {compact ? (
+        <>
+          <Sheet open={rangeOpen} onClose={() => setRangeOpen(false)} title="范围推断" tall>
+            <div className="sheet-subhead">
+              <span>随回放实时重算</span>
+              {rangeHead}
+            </div>
+            {rangeBody}
+          </Sheet>
+          <Sheet open={menuOpen} onClose={() => setMenuOpen(false)} title="复盘工具">
+            <SheetRow icon={<IconEye />} label="上帝视角" hint="亮出所有人的底牌" on={godView} onClick={() => setGodView(!godView)} />
+            <SheetRow
+              icon={<IconChart />}
+              label="范围推断"
+              hint="每个对手在当前这一步的推断范围"
+              onClick={() => {
+                setMenuOpen(false)
+                setRangeOpen(true)
+              }}
+            />
+            <SheetRow
+              icon={<IconReport />}
+              label="赛后分析"
+              onClick={() => {
+                setMenuOpen(false)
+                setPmOpen(true)
+              }}
+            />
+            <SheetRow
+              icon={<IconDownload />}
+              label="导出手牌历史"
+              hint={godView ? '含全部底牌（上帝视角）' : '仅你的底牌与摊牌亮出的牌'}
+              onClick={() => {
+                setMenuOpen(false)
+                onExport()
+              }}
+            />
+          </Sheet>
+        </>
+      ) : null}
     </div>
   )
 }
